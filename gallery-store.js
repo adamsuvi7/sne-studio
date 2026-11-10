@@ -37,7 +37,9 @@
 
   async function save(item) {
     try {
-      await run("readwrite", (s) => s.put({ id: item.id, src: item.src, label: item.label, addedAt: Date.now() }));
+      const row = { id: item.id, src: item.src, label: item.label, addedAt: Date.now() };
+      if (item.bgOrigSrc) row.bgOrigSrc = item.bgOrigSrc; // asli sebelum Hapus Background
+      await run("readwrite", (s) => s.put(row));
       // Minta browser tidak menghapus data ini saat ruang disk menipis
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
     } catch (e) {
@@ -63,7 +65,9 @@
       let added = 0;
       for (const r of rows) {
         if (!r.src || state.galleryItems.some((g) => g.id === r.id || g.src === r.src)) continue;
-        state.galleryItems.unshift({ id: r.id, src: r.src, label: r.label, saved: true });
+        const item = { id: r.id, src: r.src, label: r.label, saved: true };
+        if (r.bgOrigSrc) item.bgOrigSrc = r.bgOrigSrc;
+        state.galleryItems.unshift(item);
         added++;
       }
       if (added) {

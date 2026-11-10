@@ -2049,6 +2049,7 @@ typography:
 
     const historyStack = [];
     let historyPointer = -1;
+    const pipRegistry = new Map(); // id stiker PIP -> objeknya, supaya stiker yang dihapus bisa di-undo
 
     // Sidik jari ringan foto slot, supaya undo tidak menempelkan edit lama ke foto yang sudah diganti
     const slotPhotoKey = (s) => { const u = s.origSrc || s.src || ""; return u.length + ":" + u.slice(-24); };
@@ -2061,7 +2062,13 @@ typography:
         slotsMeta: state.slots.map((s) => ({
           zoom: s.zoom, panX: s.panX, panY: s.panY, offsetX: s.offsetX, offsetY: s.offsetY, scaleBox: s.scaleBox,
           adj: s.adj || null, photoKey: slotPhotoKey(s)
-        }))
+        })),
+        // Stiker PIP: hanya posisi/ukuran/edit; fotonya diambil lagi dari pipRegistry saat undo
+        pips: state.pipPhotos.map((p) => {
+          pipRegistry.set(p.id, p);
+          const { img, src, _fx, _adjSrc, ...meta } = p;
+          return meta;
+        })
       });
       if (historyPointer >= 0 && historyStack[historyPointer] === snap) return;
       historyStack.splice(historyPointer + 1);
@@ -2087,6 +2094,18 @@ typography:
               slot._adjSrc = slot.origSrc || slot.src;
             }
           });
+        }
+        if (data.pips) {
+          state.pipPhotos = data.pips.map((m) => {
+            const p = pipRegistry.get(m.id);
+            if (!p) return null;
+            const { adj, ...meta } = m;
+            Object.assign(p, meta);
+            p.adj = adj || null;
+            p._adjSrc = p.src;
+            return p;
+          }).filter(Boolean);
+          if (!state.pipPhotos.some((p) => p.id === state.selectedPipId)) state.selectedPipId = null;
         }
         state.selectedLayerId = state.layers[0]?.id || null;
         syncAllUI();
@@ -3421,6 +3440,20 @@ typography:
       });
     }
 
+    // Satu pintu hapus stiker PIP (daftar Layout, panel Edit Foto, tombol Delete, hapus dari Galeri). Bisa di-undo.
+    function deletePipPhotos(ids, silent = false) {
+      const before = state.pipPhotos.length;
+      state.pipPhotos = state.pipPhotos.filter((p) => !ids.includes(p.id));
+      const removed = before - state.pipPhotos.length;
+      if (!removed) return 0;
+      if (ids.includes(state.selectedPipId)) state.selectedPipId = null;
+      pushHistorySnapshot();
+      syncAllUI();
+      renderCanvas();
+      if (!silent) showToast(`Stiker PIP dihapus dari kanvas (Ctrl+Z untuk membatalkan)`);
+      return removed;
+    }
+
     function renderPipPhotosList() {
       const container = document.getElementById("pipPhotosContainer");
       container.innerHTML = "";
@@ -3455,11 +3488,7 @@ typography:
       });
 
       container.querySelectorAll("[data-del-pip]").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          state.pipPhotos = state.pipPhotos.filter((p) => p.id !== btn.getAttribute("data-del-pip"));
-          renderPipPhotosList();
-          renderCanvas();
-        });
+        btn.addEventListener("click", () => deletePipPhotos([btn.getAttribute("data-del-pip")]));
       });
 
       container.querySelectorAll("[data-pip-scale]").forEach((rng) => {
@@ -3944,6 +3973,7 @@ typography:
         });
         state.interactionMode = "box";
         updateModeButtonsUI();
+        pushHistorySnapshot();
         syncAllUI();
         renderCanvas();
         showToast("Foto mengambang (PIP) ditambahkan");
@@ -4883,7 +4913,8 @@ typography:
     // STUDIO GALLERY GRID & CANVA PHOTO ENGINE (BG REMOVER + HD & DENOISE)
     // =========================================================================
     // persist = true: foto disimpan permanen di browser (gallery-store.js). Contoh template tidak disimpan.
-    function addPhotoToStudioGallery(src, label = "Foto Import", persist = true) {
+    // bgOrigSrc: foto asli sebelum Hapus Background, supaya potongan dari Galeri tetap bisa dikembalikan latarnya
+    function addPhotoToStudioGallery(src, label = "Foto Import", persist = true, bgOrigSrc = null) {
       if (!src) return;
       if (state.galleryItems.some((g) => g.src === src)) return;
       const item = {
@@ -4892,9 +4923,17 @@ typography:
         label,
         saved: persist
       };
+      if (bgOrigSrc && bgOrigSrc !== src) item.bgOrigSrc = bgOrigSrc;
       state.galleryItems.unshift(item);
       if (persist && window.SNEGalleryStore) SNEGalleryStore.save(item);
       renderStudioGalleryGrid();
+    }
+
+    // Isian slot dari item Galeri (potongan tanpa BG membawa foto aslinya)
+    function galleryPhotoFields(item) {
+      return item.bgOrigSrc
+        ? { src: item.src, origSrc: item.bgOrigSrc, isBgRemoved: true }
+        : { src: item.src, origSrc: item.src, isBgRemoved: false, cutoutStroke: 0 };
     }
 
     function renderStudioGalleryGrid() {
@@ -4941,16 +4980,17 @@ typography:
             for (let i = 0; i < state.slots.length; i++) {
               const gItem = state.galleryItems[(idx + i) % state.galleryItems.length] || item;
               const gImg = await loadImage(gItem.src);
-              Object.assign(state.slots[i], { src: gItem.src, origSrc: gItem.src, img: gImg, isUserUploaded: true });
+              Object.assign(state.slots[i], galleryPhotoFields(gItem), { img: gImg, isUserUploaded: true });
             }
             showToast("Semua slot diisi dari Galeri");
           } else {
             const idxSlot = state.selectedSlotIndex || 0;
             if (state.slots[idxSlot]) {
-              Object.assign(state.slots[idxSlot], { src: item.src, origSrc: item.src, img, zoom: 1.0, panX: 0, panY: 0, isUserUploaded: true });
+              Object.assign(state.slots[idxSlot], galleryPhotoFields(item), { img, zoom: 1.0, panX: 0, panY: 0, isUserUploaded: true });
               showToast(`Foto dimasukkan ke Slot #${idxSlot + 1}`);
             }
           }
+          pushHistorySnapshot();
           syncAllUI();
           renderCanvas();
         });
@@ -4963,10 +5003,14 @@ typography:
       grid.querySelectorAll("[data-gal-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const id = btn.getAttribute("data-gal-del");
+          const item = state.galleryItems.find((g) => g.id === id);
           state.galleryItems = state.galleryItems.filter((g) => g.id !== id);
           if (window.SNEGalleryStore) SNEGalleryStore.remove(id);
           renderStudioGalleryGrid();
-          showToast("Foto dihapus dari Galeri (foto di kanvas tidak berubah)");
+          // Stiker PIP dari foto ini ikut dihapus dari kanvas; foto di slot kolase tetap
+          const pipIds = item ? state.pipPhotos.filter((p) => p.src === item.src).map((p) => p.id) : [];
+          const nPip = pipIds.length ? deletePipPhotos(pipIds, true) : 0;
+          showToast(nPip ? `Foto dihapus dari Galeri + ${nPip} stiker PIP di kanvas (Ctrl+Z untuk membatalkan stiker)` : "Foto dihapus dari Galeri (foto di slot kanvas tidak berubah)");
         });
       });
 
@@ -4982,6 +5026,7 @@ typography:
           state.pipPhotos.push({ id: "pip_" + Date.now(), src: item.src, img, x: 0.5, y: 0.5, w, h, aspect: h / w, radius: 0, border: 0, zoom: 1, panX: 0, panY: 0 });
           state.interactionMode = "box";
           updateModeButtonsUI();
+          pushHistorySnapshot();
           syncAllUI();
           renderCanvas();
           showToast("Foto ditambahkan sebagai stiker PIP mengambang");
@@ -5104,7 +5149,7 @@ typography:
       document.getElementById("sliderCutoutStroke").value = slot.cutoutStroke;
       document.getElementById("valCutoutStroke").textContent = `${slot.cutoutStroke} px`;
 
-      addPhotoToStudioGallery(outUrl, `Subjek Tanpa BG #${slotIdx + 1}`);
+      addPhotoToStudioGallery(outUrl, `Subjek Tanpa BG #${slotIdx + 1}`, true, slot.origSrc);
       syncAllUI();
       renderCanvas();
       showToast(`Background Foto Slot #${slotIdx + 1} berhasil dihapus!`);
@@ -5171,7 +5216,7 @@ typography:
       const outImg = await loadImage(outUrl);
       slot.src = outUrl;
       slot.img = outImg;
-      slot.isBgRemoved = true;
+      slot.isBgRemoved = false; // HD memproses foto asli (berlatar)
 
       addPhotoToStudioGallery(outUrl, `Foto HD Halus #${slotIdx + 1}`);
       syncAllUI();
@@ -5198,10 +5243,12 @@ typography:
       slot.src = slot.origSrc;
       slot.img = await loadImage(slot.origSrc);
       slot.cutoutStroke = 0;
+      slot.isBgRemoved = false;
       slot.flipH = false;
       slot.flipV = false;
       slot.rot90 = 0;
       slot.adj = null;
+      pushHistorySnapshot();
       syncAllUI();
       renderCanvas();
       showToast(`Foto Slot #${idx + 1} dipulihkan ke asli`);

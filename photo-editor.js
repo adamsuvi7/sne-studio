@@ -535,6 +535,7 @@
     $("peTarget").textContent = session ? `${session.label} · ketuk foto lain untuk pindah` : "Belum ada foto. Unggah foto dulu.";
     $("peEditor").classList.toggle("hidden", !session);
     ["peReplace", "peRemoveBg", "peEnhance"].forEach((id) => $(id).classList.toggle("hidden", !isSlot));
+    $("peRemoveBg").textContent = isSlot && session.obj.isBgRemoved ? "Kembalikan Background" : "Hapus Background";
     renderTargets();
     renderBody();
     if (previous !== (session && session.obj)) schedule();
@@ -564,6 +565,7 @@
     const r = resolve(want);
     if (!r || !session || r.obj !== session.obj) return startSession(want);
     Object.assign(session, r);
+    $("peRemoveBg").textContent = session.kind === "slot" && session.obj.isBgRemoved ? "Kembalikan Background" : "Hapus Background";
     renderTargets();
     $("peTarget").textContent = `${session.label} · ketuk foto lain untuk pindah`;
     if (activeTab === "looks") {
@@ -630,7 +632,11 @@
     $(btnId).click();
   };
   $("peReplace").addEventListener("click", slotTool("singleSlotPhotoInput"));
-  $("peRemoveBg").addEventListener("click", slotTool("btnCanvaRemoveBg"));
+  // Foto yang sudah terpotong: tombol yang sama mengembalikan latar aslinya
+  $("peRemoveBg").addEventListener("click", () => {
+    if (session && session.kind === "slot" && session.obj.isBgRemoved) return slotTool("btnRestoreOrigPhoto")();
+    slotTool("btnCanvaRemoveBg")();
+  });
   $("peEnhance").addEventListener("click", slotTool("btnCanvaEnhanceHd"));
   $("peSaveGallery").addEventListener("click", () => {
     if (!session) return;
