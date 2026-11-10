@@ -18,9 +18,11 @@ Dokumen ini dibaca otomatis oleh **Claude Code** agar pengembangan lanjutan berj
 
    * Sebelum `<script>` utama: `assets-data.js`, lalu `fonts-extra.js` (518 font Google tambahan; CSS-nya dimuat on-demand lewat `SNEFonts.ensure(nama)`, dipanggil otomatis di `renderCanvas()` dan strip font).
 
-   * Sesudah `<script>` utama: `photo-import.js` (`SNEImport.fileToDataURL` — satu pintu semua upload: HEIC/HEIF via heic-to, TIFF via UTIF, pengecilan foto besar, drag & drop, paste), `photo-editor.js` (`SNEFx` mesin piksel + `SNEEditor` UI editor cahaya/warna/efek/looks; ketuk foto di kanvas membuka editor; uji cepat: `SNEFx.selfCheck()` di konsol), `canvas-gestures.js` (cubit dua jari & roda mouse).
+   * Sesudah `<script>` utama: `photo-import.js` (`SNEImport.fileToDataURL` — satu pintu semua upload: HEIC/HEIF via heic-to, TIFF via UTIF, pengecilan foto besar, drag & drop, paste), `photo-editor.js` (`SNEFx` mesin piksel + `SNEEditor` panel "Edit Foto" yang mengisi `#inspPanePhoto` di inspector kanan; ketuk foto di kanvas membukanya; uji cepat: `SNEFx.selfCheck()` di konsol), `canvas-gestures.js` (cubit dua jari & roda mouse), `gallery-store.js` (`SNEGalleryStore` — foto Galeri yang diimpor disimpan permanen di IndexedDB `sne-studio`), `ref-clone.js` (`SNERefClone` — OCR tesseract.js + pencocokan font untuk mengkloning teks gambar referensi; diagnosa: `SNERefClone.report`).
 
-   * Edit foto non-destruktif disimpan di `slot.adj` / `pip.adj`; renderer memakai `SNEFx.imageFor(slot)`, jangan menggambar `slot.img` langsung.
+   * Edit foto non-destruktif disimpan di `slot.adj` / `pip.adj` (termasuk putar/balik); renderer memakai `SNEFx.imageFor(slot)`, jangan menggambar `slot.img` langsung. Saat panel Edit Foto aktif foto memakai pratinjau ringan; export memasang `SNEFx.fullRes = true`.
+
+   * **Tata letak**: `body.app-shell` setinggi layar (tanpa scroll halaman), `main` grid 3 kolom lebar tetap di `lg+`. Ukuran kanvas dihitung `fitCanvasToStage()` dari `#canvasFitBox` — jangan pakai `max-height` berbasis `vh`. Panel kanan punya 2 pane (`showInspectorPane("text" | "photo")`). Di bawah 1024px tampilan diatur `body[data-mob-view]` lewat `setMobileView("left" | "center" | "right" | "photo")`; `right`/`photo` menampilkan panel kanan sebagai lembar bawah di atas kanvas.
 
 4. **Deployment Vercel**:
 

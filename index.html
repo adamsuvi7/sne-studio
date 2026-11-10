@@ -205,9 +205,48 @@
       background-image: radial-gradient(#D2D2CE 1px, transparent 0);
       background-size: 20px 20px;
     }
+
+    /* ---- Kerangka aplikasi: satu layar penuh, tiap kolom menggulung sendiri ---- */
+    .app-shell {
+      height: 100vh;
+      height: calc(100dvh / var(--app-zoom));
+      overflow: hidden;
+    }
+    .stage-toolbar { scrollbar-width: none; }
+    .stage-toolbar::-webkit-scrollbar { display: none; }
+    .stage-toolbar > * { flex-shrink: 0; white-space: nowrap; }
+    #canvasFitBox { scrollbar-width: thin; }
+    #modeSegmented .sne-seg-item { white-space: nowrap; }
+
+    /* ---- HP / tablet (< 1024px): satu tampilan sekaligus; Teks & Edit Foto jadi lembar bawah ---- */
+    @media (max-width: 1023.98px) {
+      #rightInspectorPanel { display: none; }
+      body[data-mob-view="left"] #leftSidebarPanel { display: flex; }
+      body[data-mob-view="left"] #centerStagePanel { display: none; }
+      body[data-mob-view="right"] #rightInspectorPanel,
+      body[data-mob-view="photo"] #rightInspectorPanel {
+        display: flex;
+        position: fixed;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 44dvh;
+        z-index: 35;
+        border-left: 0;
+        border-top: 1px solid var(--border-control);
+        border-radius: 18px 18px 0 0;
+        box-shadow: 0 -10px 32px rgba(0, 0, 0, 0.16);
+      }
+      body[data-mob-view="right"] #centerStagePanel,
+      body[data-mob-view="photo"] #centerStagePanel { padding-bottom: calc(44dvh + 8px); }
+      body[data-mob-view="right"] #modeSegmented,
+      body[data-mob-view="photo"] #modeSegmented { display: none; }
+      body[data-mob-view="right"] .stage-toolbar,
+      body[data-mob-view="photo"] .stage-toolbar { display: none; }
+    }
   </style>
 </head>
-<body class="min-h-screen flex flex-col select-none">
+<body class="app-shell flex flex-col select-none" data-mob-view="center">
 
   <!-- Hidden File Inputs -->
   <input type="file" id="multiPhotoInput" accept="image/*" multiple class="hidden" />
@@ -220,16 +259,16 @@
   <!-- ===================================================================== -->
   <!-- TOP NAVBAR (64px, Clean Flat White, Segmented Mode Control)           -->
   <!-- ===================================================================== -->
-  <header class="sticky top-0 z-30 bg-white border-b border-[#E7E7E4] px-4 h-16 flex items-center justify-between gap-3">
+  <header class="shrink-0 z-30 bg-white border-b border-[#E7E7E4] px-2 sm:px-4 py-2 lg:py-0 lg:h-16 flex flex-wrap lg:flex-nowrap items-center justify-between gap-x-2 gap-y-2">
     <!-- Left: Brand Identity + Undo/Redo -->
-    <div class="flex items-center gap-3">
+    <div class="flex items-center gap-2 sm:gap-3 shrink-0">
       <div class="flex items-center gap-2.5">
         <div class="w-9 h-9 rounded-full flex items-center justify-center font-extrabold text-xs tracking-tight" style="background-color: var(--primary-light); color: var(--primary);">
           SNE
         </div>
-        <div>
+        <div class="hidden sm:block">
           <span class="font-extrabold text-base tracking-tight text-[#171717]">SNE Studio</span>
-          <span class="hidden sm:inline-block ml-2 text-xs font-medium text-[#737373]">Tipografi & Kolase Foto</span>
+          <span class="hidden 2xl:inline-block ml-2 text-xs font-medium text-[#737373]">Tipografi & Kolase Foto</span>
         </div>
       </div>
 
@@ -237,18 +276,18 @@
 
       <!-- Undo / Redo -->
       <div class="flex items-center gap-1">
-        <button id="btnUndo" type="button" class="sne-btn-secondary h-9 px-2.5 text-xs flex items-center gap-1" title="Urungkan (Ctrl+Z)">
+        <button id="btnUndo" type="button" class="sne-btn-secondary h-9 px-2 sm:px-2.5 text-xs flex items-center gap-1" title="Urungkan (Ctrl+Z)" aria-label="Urungkan">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5v0a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>
           <span class="hidden xl:inline">Urung</span>
         </button>
-        <button id="btnRedo" type="button" class="sne-btn-secondary h-9 px-2.5 text-xs flex items-center gap-1" title="Ulangi (Ctrl+Y)">
+        <button id="btnRedo" type="button" class="sne-btn-secondary h-9 px-2 sm:px-2.5 text-xs flex items-center gap-1" title="Ulangi (Ctrl+Y)" aria-label="Ulangi">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 14 5-5-5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5v0A5.5 5.5 0 0 0 9.5 20H13"/></svg>
         </button>
       </div>
     </div>
 
-    <!-- Center: Canvas Interaction Mode Segmented Pill -->
-    <div class="sne-segmented flex items-center gap-1">
+    <!-- Center: Canvas Interaction Mode Segmented Pill (di HP turun jadi baris kedua selebar layar) -->
+    <div id="modeSegmented" class="sne-segmented grid grid-cols-3 lg:flex items-center gap-1 order-last lg:order-none w-full lg:w-auto text-center">
       <button type="button" id="modeBtnText" class="sne-seg-item active px-3.5 py-1.5 text-xs">
         Geser Teks
       </button>
@@ -261,28 +300,28 @@
     </div>
 
     <!-- Right: Canvas Ratio, Upload, Settings/DESIGN.md, and Single Primary Save Button -->
-    <div class="flex items-center gap-2">
-      <select id="aspectRatioSelect" aria-label="Rasio Kanvas" class="sne-field h-10 px-2.5 text-xs font-semibold cursor-pointer">
+    <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <select id="aspectRatioSelect" aria-label="Rasio Kanvas" class="sne-field h-10 w-[76px] sm:w-auto px-2 sm:px-2.5 text-xs font-semibold cursor-pointer">
         <option value="9:16">IG Story (9:16)</option>
         <option value="4:5">IG Feed (4:5)</option>
         <option value="1:1">Persegi (1:1)</option>
         <option value="16:9">Lanskap (16:9)</option>
       </select>
 
-      <button id="btnUploadMultiTop" type="button" class="sne-btn-secondary h-10 px-3 text-xs flex items-center gap-1.5">
+      <button id="btnUploadMultiTop" type="button" class="sne-btn-secondary h-10 px-2.5 sm:px-3 text-xs flex items-center gap-1.5" aria-label="Unggah foto">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-8-4-4m0 0L8 8m4-4v12"/></svg>
-        <span class="hidden md:inline">Unggah Foto</span>
+        <span class="hidden xl:inline">Unggah Foto</span>
       </button>
 
       <button id="btnOpenDesignMdModal" type="button" class="sne-btn-secondary h-10 px-3 text-xs hidden sm:flex items-center gap-1.5" title="Tampilan Aplikasi & Dokumen DESIGN.md">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6V4m0 2a2 2 0 1 0 0 4m0-4a2 2 0 1 1 0 4m-6 8a2 2 0 1 0 0-4m0 4a2 2 0 1 1 0-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 1 0 0-4m0 4a2 2 0 1 1 0-4m0 4v2m0-6V4"/></svg>
-        <span class="hidden lg:inline">Tampilan</span>
+        <span class="hidden xl:inline">Tampilan</span>
       </button>
 
       <!-- SATU TOMBOL UTAMA BERWARNA MEREK SESUAI DESIGN.MD -->
-      <button id="btnOpenExportModal" type="button" class="sne-btn-primary h-10 px-4 text-xs flex items-center gap-1.5">
+      <button id="btnOpenExportModal" type="button" class="sne-btn-primary h-10 px-3 sm:px-4 text-xs flex items-center gap-1.5">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4-4 4m0 0-4-4m4 4V4"/></svg>
-        <span>Simpan HD</span>
+        <span>Simpan<span class="hidden sm:inline"> HD</span></span>
       </button>
     </div>
   </header>
@@ -291,26 +330,21 @@
   <!-- MAIN 3-COLUMN STUDIO WORKSPACE                                        -->
   <!-- ===================================================================== -->
   <!-- MOBILE / TABLET / NARROW VIEWPORT PANEL SWITCHER (< 1024px) -->
-  <div class="lg:hidden bg-white border-b border-[#E7E7E4] px-3 py-1.5 flex items-center justify-between gap-1.5 sticky top-16 z-30">
-    <div class="sne-segmented grid grid-cols-3 gap-1 w-full">
-      <button type="button" data-mob-view="left" class="mob-view-btn sne-seg-item py-1.5 text-xs text-center">
-        Template & Foto
-      </button>
-      <button type="button" data-mob-view="center" class="mob-view-btn sne-seg-item active py-1.5 text-xs text-center">
-        Kanvas Story
-      </button>
-      <button type="button" data-mob-view="right" class="mob-view-btn sne-seg-item py-1.5 text-xs text-center">
-        Teks & 670 Font
-      </button>
+  <nav class="lg:hidden shrink-0 bg-white border-b border-[#E7E7E4] px-2 sm:px-3 py-1.5" aria-label="Tampilan">
+    <div class="sne-segmented grid grid-cols-4 gap-1 w-full">
+      <button type="button" data-mob-view="left" class="mob-view-btn sne-seg-item py-1.5 text-xs text-center">Template</button>
+      <button type="button" data-mob-view="center" class="mob-view-btn sne-seg-item active py-1.5 text-xs text-center">Kanvas</button>
+      <button type="button" data-mob-view="right" class="mob-view-btn sne-seg-item py-1.5 text-xs text-center">Teks</button>
+      <button type="button" data-mob-view="photo" class="mob-view-btn sne-seg-item py-1.5 text-xs text-center">Edit Foto</button>
     </div>
-  </div>
+  </nav>
 
-  <main class="flex-1 grid grid-cols-1 lg:grid-cols-12 overflow-hidden">
+  <main class="flex-1 min-h-0 grid grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-[300px_minmax(0,1fr)_320px] xl:grid-cols-[340px_minmax(0,1fr)_360px] 2xl:grid-cols-[380px_minmax(0,1fr)_400px] overflow-hidden">
 
     <!-- =================================================================== -->
     <!-- COLUMN 1 (LEFT): TEMPLATES, LAYOUTS & PHOTO SLOTS, QUICK FILL       -->
     <!-- =================================================================== -->
-    <aside id="leftSidebarPanel" class="hidden lg:flex lg:col-span-4 xl:col-span-3 bg-white border-r border-[#E7E7E4] flex-col lg:h-[calc(100vh-64px)]">
+    <aside id="leftSidebarPanel" class="hidden lg:flex bg-white border-r border-[#E7E7E4] flex-col h-full min-h-0 min-w-0">
       <!-- 4-Tab Segmented Control (Template, Galeri, Kolase & Foto, Isi Cepat) -->
       <div class="p-3 border-b border-[#E7E7E4]">
         <div class="sne-segmented grid grid-cols-4 gap-1">
@@ -336,7 +370,7 @@
           <div class="flex items-center justify-between gap-2">
             <div>
               <div class="text-xs font-bold text-[#171717]">Punya Contoh Postingan Baru?</div>
-              <div class="text-[11px] text-[#737373]">Unggah gambar referensi untuk dijiplak posisinya secara interaktif ke foto baru Anda.</div>
+              <div class="text-[11px] text-[#737373]">Unggah gambar referensi: teks, posisi, warna, dan font terdekatnya dikloning otomatis jadi template yang bisa diedit.</div>
             </div>
             <button type="button" id="btnUploadNewRefPost" class="sne-btn-primary px-3 py-2 text-xs shrink-0">
               + Referensi Baru
@@ -348,6 +382,10 @@
             <div class="flex items-center justify-between">
               <span class="text-xs font-bold text-[#B42318]">Panduan Referensi Interaktif</span>
               <button type="button" id="btnCloseInteractiveRef" class="text-[11px] text-[#737373] hover:text-[#171717]">Tutup</button>
+            </div>
+            <div class="flex items-center justify-between gap-2 rounded-xl bg-white border border-[#E7E7E4] px-2.5 py-2">
+              <span id="refCloneStatus" class="text-[11px] font-semibold text-[#525252] leading-snug" role="status">Kloning teks otomatis siap.</span>
+              <button type="button" id="btnRefAutoClone" class="sne-btn-secondary px-2 py-1 text-[11px] shrink-0">Kloning Ulang</button>
             </div>
             <p class="text-[11px] text-[#525252] leading-snug">
               Klik titik mana saja pada gambar referensi di bawah untuk <b>menaruh teks aktif & mengambil warnanya</b> secara otomatis:
@@ -693,17 +731,17 @@
     <!-- =================================================================== -->
     <!-- COLUMN 2 (CENTER): CLEAN UNCLUTTERED CANVAS STAGE                   -->
     <!-- =================================================================== -->
-    <section id="centerStagePanel" class="lg:col-span-4 xl:col-span-6 studio-stage flex flex-col items-center justify-between p-4 relative min-h-[540px] lg:h-[calc(100vh-64px)] overflow-hidden">
+    <section id="centerStagePanel" class="studio-stage flex flex-col items-center gap-2 p-2 sm:p-4 relative h-full min-h-0 min-w-0 overflow-hidden">
       
       <!-- Canvas Stage Wrapper -->
-      <div class="flex-1 w-full flex items-center justify-center overflow-hidden my-1">
-        <div id="canvasStageWrapper" class="relative rounded-2xl overflow-hidden border border-[#D2D2CE] bg-white shadow-lg transition-all duration-200" style="max-height: calc(100vh - 150px);">
-          <canvas id="studioCanvas" width="1080" height="1920" class="block max-h-[70vh] lg:max-h-[calc(100vh-155px)] w-auto h-auto cursor-move touch-none"></canvas>
+      <div id="canvasFitBox" class="flex-1 min-h-0 w-full flex overflow-auto">
+        <div id="canvasStageWrapper" class="relative m-auto shrink-0 rounded-2xl overflow-hidden border border-[#D2D2CE] bg-white shadow-lg">
+          <canvas id="studioCanvas" width="1080" height="1920" class="block cursor-move touch-none"></canvas>
         </div>
       </div>
 
       <!-- Minimal Bottom Action Bar (Clean Pill Buttons, Zero Clutter) -->
-      <div class="sne-card px-3 py-2 rounded-full flex items-center gap-1.5 flex-wrap justify-center">
+      <div class="stage-toolbar sne-card shrink-0 max-w-full px-2 py-1.5 rounded-2xl flex items-center gap-1.5 overflow-x-auto">
         <button type="button" data-quick-add="title" class="quick-add-btn sne-chip px-3 py-1.5 text-xs">+ Judul</button>
         <button type="button" data-quick-add="script" class="quick-add-btn sne-chip px-3 py-1.5 text-xs">+ Script</button>
         <button type="button" data-quick-add="locpill" class="quick-add-btn sne-chip px-3 py-1.5 text-xs">+ Label Lokasi</button>
@@ -728,15 +766,25 @@
     <!-- =================================================================== -->
     <!-- COLUMN 3 (RIGHT): CLEAN TYPOGRAPHY & PHONTO PRO INSPECTOR           -->
     <!-- =================================================================== -->
-    <aside id="rightInspectorPanel" class="hidden lg:flex lg:col-span-4 xl:col-span-3 bg-white border-l border-[#E7E7E4] flex-col lg:h-[calc(100vh-64px)] overflow-y-auto p-4 space-y-4">
+    <aside id="rightInspectorPanel" class="hidden lg:flex bg-white border-l border-[#E7E7E4] flex-col h-full min-h-0 min-w-0">
+      <!-- Navbar inspector: pengaturan Teks atau Edit Foto di tempat yang sama -->
+      <div class="shrink-0 p-2 sm:p-3 border-b border-[#E7E7E4] flex items-center gap-2">
+        <div class="sne-segmented grid grid-cols-2 gap-1 flex-1" role="tablist" aria-label="Panel pengaturan">
+          <button type="button" role="tab" data-insp-pane="text" aria-selected="true" class="insp-pane-btn sne-seg-item active py-1.5 text-xs text-center">Teks</button>
+          <button type="button" role="tab" data-insp-pane="photo" aria-selected="false" class="insp-pane-btn sne-seg-item py-1.5 text-xs text-center">Edit Foto</button>
+        </div>
+        <button type="button" id="btnCloseInspSheet" class="lg:hidden sne-btn-secondary h-8 w-8 text-xs font-bold shrink-0" aria-label="Tutup panel">✕</button>
+      </div>
+      <div id="inspScroll" class="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 sm:p-4">
+      <div id="inspPaneText" class="space-y-4">
       
       <!-- Layer Header & Actions -->
-      <div class="flex items-center justify-between">
-        <div>
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="min-w-0">
           <h2 class="text-sm font-bold text-[#171717]">Pengaturan Teks</h2>
-          <p id="selectedLayerIndicator" class="text-xs text-[#737373] truncate max-w-[175px]">Pilih teks di kanvas</p>
+          <p id="selectedLayerIndicator" class="text-xs text-[#737373] truncate max-w-[220px]">Pilih teks di kanvas</p>
         </div>
-        <div class="flex items-center gap-1">
+        <div class="flex flex-wrap items-center gap-1">
           <button type="button" id="btnLockLayer" class="sne-btn-secondary h-8 px-2.5 text-xs" title="Kunci Posisi Teks">
             Kunci
           </button>
@@ -1188,6 +1236,10 @@
         </div>
       </div>
 
+      </div>
+      <!-- Diisi oleh photo-editor.js -->
+      <div id="inspPanePhoto" class="hidden space-y-3"></div>
+      </div>
     </aside>
   </main>
 
@@ -2406,8 +2458,16 @@ typography:
         drawW = w * zoom;
         drawH = drawW / imgRatio;
       }
-      const cx = x + (w - drawW) * 0.5 + (panX / 100) * w * 0.6;
-      const cy = y + (h - drawH) * 0.5 + (panY / 100) * h * 0.6;
+      // Geseran dibatasi sisa gambar di luar bingkai supaya foto tidak pernah menyisakan celah kosong.
+      // Foto tanpa background (stiker potong) boleh digeser bebas.
+      let shiftX = (panX / 100) * w * 0.6, shiftY = (panY / 100) * h * 0.6;
+      if (!(slotMeta && slotMeta.isBgRemoved)) {
+        const maxX = Math.max(0, (drawW - w) / 2), maxY = Math.max(0, (drawH - h) / 2);
+        shiftX = Math.max(-maxX, Math.min(maxX, shiftX));
+        shiftY = Math.max(-maxY, Math.min(maxY, shiftY));
+      }
+      const cx = x + (w - drawW) * 0.5 + shiftX;
+      const cy = y + (h - drawH) * 0.5 + shiftY;
 
       targetCtx.save();
       const midX = cx + drawW / 2;
@@ -2948,6 +3008,7 @@ typography:
       if (window.SNEFonts) state.layers.forEach((l) => SNEFonts.ensure(l.fontFamily));
       canvas.width = state.canvasWidth;
       canvas.height = state.canvasHeight;
+      fitCanvasToStage();
       ctx.imageSmoothingEnabled = true;
       ctx.imageSmoothingQuality = "high";
       renderPhotoSlotsOnly(ctx, state.canvasWidth, state.canvasHeight);
@@ -3050,8 +3111,19 @@ typography:
           syncInspectorToSelectedLayer();
           renderLayerChips();
           renderCanvas();
+          return;
         }
-      } else if (state.interactionMode === "photo") {
+        // Tidak ada teks di bawah jari: stiker PIP bisa langsung digeser…
+        const pipUnder = findHitPipPhoto(x, y);
+        if (pipUnder) {
+          state.selectedPipId = pipUnder.id;
+          Object.assign(state.drag, { active: true, type: "pip-box", targetId: pipUnder.id, startX: x, startY: y, origX: pipUnder.x, origY: pipUnder.y });
+          renderCanvas();
+          return;
+        }
+      }
+      // …dan foto di slot digeser di dalam bingkainya, sama seperti mode Atur Foto
+      if (state.interactionMode === "text" || state.interactionMode === "photo") {
         const slotIdx = findHitSlotIndex(x, y);
         state.selectedSlotIndex = slotIdx;
         const slot = state.slots[slotIdx];
@@ -3064,9 +3136,9 @@ typography:
           state.drag.origX = slot.panX;
           state.drag.origY = slot.panY;
           renderPhotoSlotsManager();
-      renderStudioGalleryGrid();
-      const lbl = document.getElementById("canvaActiveSlotLabel");
-      if (lbl) lbl.textContent = `Mengedit: Foto Slot #${(state.selectedSlotIndex || 0) + 1}`;
+          if (window.SNEEditor) SNEEditor.sync();
+          const lbl = document.getElementById("canvaActiveSlotLabel");
+          if (lbl) lbl.textContent = `Mengedit: Foto Slot #${(state.selectedSlotIndex || 0) + 1}`;
           renderCanvas();
         }
       } else if (state.interactionMode === "box") {
@@ -3175,21 +3247,31 @@ typography:
     canvas.addEventListener("mousedown", onCanvasPointerDown);
     window.addEventListener("mousemove", onCanvasPointerMove);
     window.addEventListener("mouseup", onCanvasPointerUp);
-    canvas.addEventListener("touchstart", onCanvasPointerDown, { passive: false });
+    canvas.addEventListener("touchstart", (evt) => {
+      if (evt.touches.length !== 1) return; // dua jari ditangani canvas-gestures.js
+      evt.preventDefault(); // tanpa ini browser mengirim mousedown tiruan dan satu sentuhan terproses dua kali
+      onCanvasPointerDown(evt);
+    }, { passive: false });
     window.addEventListener("touchmove", onCanvasPointerMove, { passive: false });
     window.addEventListener("touchend", onCanvasPointerUp);
+
+    // Buka panel Teks lalu fokus ke isian teks (klik ganda mouse / ketuk ganda jari)
+    function beginTextEdit(layer) {
+      state.selectedLayerId = layer.id;
+      syncInspectorToSelectedLayer();
+      renderLayerChips();
+      renderCanvas();
+      if (isMobileLayout()) setMobileView("right");
+      else showInspectorPane("text");
+      const inputEl = document.getElementById("inspectorTextInput");
+      inputEl.focus();
+      inputEl.select();
+    }
 
     canvas.addEventListener("dblclick", (evt) => {
       const { x, y } = getCanvasCoords(evt);
       const hit = findHitLayer(x, y);
-      if (hit) {
-        state.selectedLayerId = hit.id;
-        syncInspectorToSelectedLayer();
-        renderLayerChips();
-        const inputEl = document.getElementById("inspectorTextInput");
-        inputEl.focus();
-        inputEl.select();
-      }
+      if (hit) beginTextEdit(hit);
     });
 
     // =========================================================================
@@ -3637,7 +3719,39 @@ typography:
       document.getElementById("valPhotoVignette").textContent = `${state.layoutStyle.vignette}%`;
     }
 
+    const isMobileLayout = () => window.matchMedia("(max-width: 1023.98px)").matches;
+
+    // Panel kanan: "text" (pengaturan teks) atau "photo" (edit foto, diisi photo-editor.js)
+    function showInspectorPane(pane) {
+      state.inspectorPane = pane;
+      document.querySelectorAll(".insp-pane-btn").forEach((b) => {
+        const on = b.getAttribute("data-insp-pane") === pane;
+        b.classList.toggle("active", on);
+        b.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.getElementById("inspPaneText").classList.toggle("hidden", pane !== "text");
+      document.getElementById("inspPanePhoto").classList.toggle("hidden", pane !== "photo");
+      document.getElementById("inspScroll").scrollTop = 0;
+      // Lembar bawah HP yang sedang terbuka ikut berganti isi
+      if (["right", "photo"].includes(document.body.dataset.mobView)) markMobileView(pane === "photo" ? "photo" : "right");
+      if (window.SNEEditor) pane === "photo" ? SNEEditor.activate() : SNEEditor.deactivate();
+    }
+
+    function markMobileView(view) {
+      document.body.dataset.mobView = view;
+      document.querySelectorAll(".mob-view-btn").forEach((b) => b.classList.toggle("active", b.getAttribute("data-mob-view") === view));
+      fitCanvasToStage();
+    }
+
+    // HP: left = sidebar penuh, center = kanvas penuh, right / photo = kanvas + lembar bawah
+    function setMobileView(view) {
+      markMobileView(view);
+      if (view === "right") showInspectorPane("text");
+      else if (view === "photo") showInspectorPane("photo");
+    }
+
     function syncAllUI() {
+      if (window.SNEEditor) SNEEditor.sync();
       renderTemplateCards();
       renderLayoutSelector();
       renderQuickFillInputs();
@@ -3666,7 +3780,38 @@ typography:
       }
     });
 
+    let nudgeHistoryTimer = 0;
     window.addEventListener("keydown", (e) => {
+      // Saat mengetik di kolom isian, tombol bekerja untuk teks itu sendiri (termasuk Ctrl+Z)
+      const inField = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName || "");
+      if (inField && e.target.type !== "range") return;
+      const mod = e.ctrlKey || e.metaKey;
+      const lyr = getSelectedLayer();
+      if (lyr && !lyr.locked && !inField && !mod && e.key.startsWith("Arrow")) {
+        // Panah = geser teks 1px (Shift = 10px)
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        if (e.key === "ArrowLeft") lyr.x -= step / state.canvasWidth;
+        if (e.key === "ArrowRight") lyr.x += step / state.canvasWidth;
+        if (e.key === "ArrowUp") lyr.y -= step / state.canvasHeight;
+        if (e.key === "ArrowDown") lyr.y += step / state.canvasHeight;
+        lyr.x = Math.max(0.02, Math.min(0.98, lyr.x));
+        lyr.y = Math.max(0.02, Math.min(0.98, lyr.y));
+        renderCanvas();
+        clearTimeout(nudgeHistoryTimer);
+        nudgeHistoryTimer = setTimeout(pushHistorySnapshot, 400);
+        return;
+      }
+      if (lyr && !inField && e.key === "Delete") {
+        e.preventDefault();
+        document.getElementById("btnDeleteLayer").click();
+        return;
+      }
+      if (lyr && mod && e.key.toLowerCase() === "d") {
+        e.preventDefault();
+        document.getElementById("btnDuplicateLayer").click();
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         document.getElementById("btnUndo").click();
@@ -4019,8 +4164,10 @@ typography:
       document.getElementById("interactiveRefBox").classList.remove("hidden");
       renderInteractiveRefPreview();
       renderCanvas();
-      showToast("Referensi baru dimuat! Klik pada gambar referensi untuk memindahkan teks & ambil warna.");
+      showToast("Referensi dimuat. Membaca teks & font dari gambar…");
       e.target.value = "";
+      // Ganti 4 teks contoh di atas dengan teks asli hasil baca gambar (ref-clone.js)
+      if (window.SNERefClone) SNERefClone.run(img, customRefTemplate);
     });
 
     // Clicking on the interactive reference image moves the active text layer to that spot & samples color
@@ -4693,8 +4840,14 @@ typography:
       offCtx.imageSmoothingEnabled = true;
       offCtx.imageSmoothingQuality = "high";
 
-      renderPhotoSlotsOnly(offCtx, outW, outH);
-      renderAllLayers(offCtx, outW, outH, true);
+      // Foto yang sedang diedit memakai pratinjau ringan di layar; export selalu resolusi penuh
+      if (window.SNEFx) SNEFx.fullRes = true;
+      try {
+        renderPhotoSlotsOnly(offCtx, outW, outH);
+        renderAllLayers(offCtx, outW, outH, true);
+      } finally {
+        if (window.SNEFx) SNEFx.fullRes = false;
+      }
 
       const mime = state.exportFormat === "jpeg" ? "image/jpeg" : "image/png";
       const ext = state.exportFormat === "jpeg" ? "jpg" : "png";
@@ -4729,14 +4882,18 @@ typography:
     // =========================================================================
     // STUDIO GALLERY GRID & CANVA PHOTO ENGINE (BG REMOVER + HD & DENOISE)
     // =========================================================================
-    function addPhotoToStudioGallery(src, label = "Foto Import") {
+    // persist = true: foto disimpan permanen di browser (gallery-store.js). Contoh template tidak disimpan.
+    function addPhotoToStudioGallery(src, label = "Foto Import", persist = true) {
       if (!src) return;
       if (state.galleryItems.some((g) => g.src === src)) return;
-      state.galleryItems.unshift({
+      const item = {
         id: "gal_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
         src,
-        label
-      });
+        label,
+        saved: persist
+      };
+      state.galleryItems.unshift(item);
+      if (persist && window.SNEGalleryStore) SNEGalleryStore.save(item);
       renderStudioGalleryGrid();
     }
 
@@ -4744,7 +4901,7 @@ typography:
       const grid = document.getElementById("studioGalleryGrid");
       if (!grid) return;
       grid.innerHTML = "";
-      document.getElementById("galleryCountLabel").textContent = `${state.galleryItems.length} foto tersimpan di Galeri SNE Studio`;
+      document.getElementById("galleryCountLabel").textContent = `${state.galleryItems.length} foto · bertanda ● tersimpan permanen di perangkat ini`;
 
       state.galleryItems.forEach((item, idx) => {
         const card = document.createElement("div");
@@ -4754,11 +4911,11 @@ typography:
             <img src="${item.src}" alt="${item.label}" class="w-full h-full object-cover" />
           </div>
           <div class="p-2 flex flex-col gap-1.5">
-            <div class="text-[11px] font-bold text-[#171717] truncate">${item.label || ('Foto #' + (idx + 1))}</div>
+            <div class="text-[11px] font-bold text-[#171717] truncate" title="${item.saved ? "Tersimpan di perangkat ini" : "Contoh bawaan"}">${item.saved ? "● " : ""}${item.label || ('Foto #' + (idx + 1))}</div>
             <div class="grid grid-cols-2 gap-1">
               <button type="button" data-gal-use="${item.id}" class="sne-btn-primary py-1 text-[10px]">Pakai</button>
               <button type="button" data-gal-pip="${item.id}" class="sne-btn-secondary py-1 text-[10px]">+ PIP</button>
-              <button type="button" data-gal-edit="${item.id}" class="sne-btn-secondary py-1 text-[10px]">${item.adj ? "Edit ●" : "Edit"}</button>
+              <button type="button" data-gal-edit="${item.id}" class="sne-btn-secondary py-1 text-[10px]" title="Pasang ke slot aktif lalu edit">Edit</button>
               <button type="button" data-gal-del="${item.id}" class="sne-btn-secondary py-1 text-[10px]">Hapus</button>
             </div>
           </div>
@@ -4800,13 +4957,14 @@ typography:
       });
 
       grid.querySelectorAll("[data-gal-edit]").forEach((btn) => {
-        btn.addEventListener("click", () => SNEEditor.openGallery(btn.getAttribute("data-gal-edit")));
+        btn.addEventListener("click", () => SNEEditor.editGalleryItem(btn.getAttribute("data-gal-edit")));
       });
 
       grid.querySelectorAll("[data-gal-del]").forEach((btn) => {
         btn.addEventListener("click", () => {
           const id = btn.getAttribute("data-gal-del");
           state.galleryItems = state.galleryItems.filter((g) => g.id !== id);
+          if (window.SNEGalleryStore) SNEGalleryStore.remove(id);
           renderStudioGalleryGrid();
           showToast("Foto dihapus dari Galeri (foto di kanvas tidak berubah)");
         });
@@ -5075,20 +5233,22 @@ typography:
       document.getElementById("valDenoiseLevel").textContent = `${state.canvaPhoto.denoiseLevel}%`;
     });
 
-    document.getElementById("btnFlipH").addEventListener("click", () => {
+    function changeSlotGeometry(change) {
       const slot = state.slots[state.selectedSlotIndex || 0];
-      if (slot) { slot.flipH = !slot.flipH; renderCanvas(); }
-    });
+      if (!slot || !slot.img) return;
+      const adj = { ...(slot.adj || {}) };
+      change(adj);
+      ["rot", "flipH", "flipV"].forEach((k) => { if (!adj[k]) delete adj[k]; });
+      slot.adj = SNEFx.isNeutral(adj) ? null : adj;
+      slot._adjSrc = slot.origSrc || slot.src;
+      pushHistorySnapshot();
+      SNEEditor.sync();
+      renderCanvas();
+    }
 
-    document.getElementById("btnFlipV").addEventListener("click", () => {
-      const slot = state.slots[state.selectedSlotIndex || 0];
-      if (slot) { slot.flipV = !slot.flipV; renderCanvas(); }
-    });
-
-    document.getElementById("btnRotatePhoto90").addEventListener("click", () => {
-      const slot = state.slots[state.selectedSlotIndex || 0];
-      if (slot) { slot.rot90 = ((slot.rot90 || 0) + 90) % 360; renderCanvas(); }
-    });
+    document.getElementById("btnFlipH").addEventListener("click", () => changeSlotGeometry((a) => { a.flipH = !a.flipH; }));
+    document.getElementById("btnFlipV").addEventListener("click", () => changeSlotGeometry((a) => { a.flipV = !a.flipV; }));
+    document.getElementById("btnRotatePhoto90").addEventListener("click", () => changeSlotGeometry((a) => { a.rot = ((a.rot || 0) + 90) % 360; }));
 
     document.getElementById("sliderPhotoBlur").addEventListener("input", (e) => {
       state.filters.blur = parseInt(e.target.value, 10);
@@ -5190,37 +5350,14 @@ typography:
       });
     });
 
-    // Mobile / Narrow Screen 3-View Switcher
+    // Navigasi tampilan HP + navbar panel kanan
     document.querySelectorAll(".mob-view-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        document.querySelectorAll(".mob-view-btn").forEach((b) => b.classList.remove("active"));
-        btn.classList.add("active");
-        const view = btn.getAttribute("data-mob-view");
-        const leftP = document.getElementById("leftSidebarPanel");
-        const centerP = document.getElementById("centerStagePanel");
-        const rightP = document.getElementById("rightInspectorPanel");
-
-        if (view === "left") {
-          leftP.classList.remove("hidden");
-          leftP.classList.add("flex");
-          centerP.classList.add("hidden", "lg:flex");
-          rightP.classList.add("hidden");
-          rightP.classList.remove("flex");
-        } else if (view === "right") {
-          rightP.classList.remove("hidden");
-          rightP.classList.add("flex");
-          leftP.classList.add("hidden");
-          leftP.classList.remove("flex");
-          centerP.classList.add("hidden", "lg:flex");
-        } else {
-          centerP.classList.remove("hidden");
-          leftP.classList.add("hidden");
-          leftP.classList.remove("flex");
-          rightP.classList.add("hidden");
-          rightP.classList.remove("flex");
-        }
-      });
+      btn.addEventListener("click", () => setMobileView(btn.getAttribute("data-mob-view")));
     });
+    document.querySelectorAll(".insp-pane-btn").forEach((btn) => {
+      btn.addEventListener("click", () => showInspectorPane(btn.getAttribute("data-insp-pane")));
+    });
+    document.getElementById("btnCloseInspSheet").addEventListener("click", () => setMobileView("center"));
 
     // Compare Original Reference Screenshot Button (Click or Hold)
     let isComparingOriginal = false;
@@ -5252,55 +5389,36 @@ typography:
     btnCompareOrig.addEventListener("touchstart", (e) => { e.preventDefault(); toggleCompareOrig(true); }, { passive: false });
     btnCompareOrig.addEventListener("touchend", () => toggleCompareOrig(false));
 
+    // Ukuran tampilan kanvas dihitung dari ruang panggung yang tersedia (bukan dari tinggi layar),
+    // jadi tidak pernah tertimpa toolbar/header di ukuran layar mana pun.
+    function fitCanvasToStage() {
+      const box = document.getElementById("canvasFitBox");
+      if (!box || !box.clientWidth || !box.clientHeight) return;
+      const zoom = (state.previewZoom || 100) / 100;
+      const k = Math.min((box.clientWidth - 4) / state.canvasWidth, (box.clientHeight - 4) / state.canvasHeight) * zoom;
+      const w = Math.max(60, Math.floor(state.canvasWidth * k)), h = Math.max(60, Math.floor(state.canvasHeight * k));
+      const key = w + "x" + h;
+      if (key === fitCanvasToStage.lastKey) return;
+      fitCanvasToStage.lastKey = key;
+      canvas.style.width = w + "px";
+      canvas.style.height = h + "px";
+    }
+    new ResizeObserver(fitCanvasToStage).observe(document.getElementById("canvasFitBox"));
+    window.addEventListener("resize", fitCanvasToStage);
+
     // Canvas Preview Zoom Toggle (100% -> 125% -> 150% -> 100%)
-    let canvasPreviewZoom = 100;
     const btnZoomToggle = document.getElementById("btnZoomCanvasToggle");
     btnZoomToggle.addEventListener("click", () => {
-      canvasPreviewZoom = canvasPreviewZoom === 100 ? 125 : canvasPreviewZoom === 125 ? 150 : 100;
-      btnZoomToggle.textContent = `${canvasPreviewZoom}%`;
-      btnZoomToggle.classList.toggle("active", canvasPreviewZoom > 100);
-      canvas.style.maxHeight = canvasPreviewZoom === 100 ? "calc(100vh - 155px)" : `${Math.round(78 * (canvasPreviewZoom / 100))}vh`;
-    });
-
-    // Double-Click on Canvas Text to Immediately Focus Textarea
-    canvas.addEventListener("dblclick", () => {
-      if (state.interactionMode === "text" && state.selectedLayerId) {
-        const rightBtn = document.querySelector('.mob-view-btn[data-mob-view="right"]');
-        if (window.innerWidth < 1024 && rightBtn) rightBtn.click();
-        const inp = document.getElementById("inspectorTextInput");
-        if (inp) {
-          inp.focus();
-          inp.select();
-          showToast("Ketik langsung untuk mengubah isi teks");
-        }
-      }
-    });
-
-    // Touch Support on Canvas for Mobile / Tablet Dragging
-    canvas.addEventListener("touchstart", (evt) => {
-      if (evt.touches.length !== 1) return;
-      const t = evt.touches[0];
-      const mouseEvt = new MouseEvent("mousedown", { clientX: t.clientX, clientY: t.clientY });
-      canvas.dispatchEvent(mouseEvt);
-    }, { passive: true });
-
-    window.addEventListener("touchmove", (evt) => {
-      if (!state.dragging || evt.touches.length !== 1) return;
-      evt.preventDefault();
-      const t = evt.touches[0];
-      const mouseEvt = new MouseEvent("mousemove", { clientX: t.clientX, clientY: t.clientY });
-      window.dispatchEvent(mouseEvt);
-    }, { passive: false });
-
-    window.addEventListener("touchend", () => {
-      if (!state.dragging) return;
-      window.dispatchEvent(new MouseEvent("mouseup"));
+      state.previewZoom = state.previewZoom === 125 ? 150 : state.previewZoom === 150 ? 100 : 125;
+      btnZoomToggle.textContent = `${state.previewZoom}%`;
+      btnZoomToggle.classList.toggle("active", state.previewZoom > 100);
+      fitCanvasToStage();
     });
 
     window.addEventListener("load", async () => {
       await Promise.all(Object.values(SAMPLE_PHOTOS).map((src) => loadImage(src)));
       REFERENCE_TEMPLATES.forEach((tpl) => {
-        addPhotoToStudioGallery(tpl.cleanBase || tpl.refThumb, tpl.name);
+        addPhotoToStudioGallery(tpl.cleanBase || tpl.refThumb, tpl.name, false);
       });
       for (let i = 0; i < state.slots.length; i++) {
         state.slots[i].origSrc = state.slots[i].src;
@@ -5310,10 +5428,13 @@ typography:
         document.fonts.ready.then(() => renderCanvas());
       }
       await applyTemplate("tpl-18-pistachio", false);
+      if (window.SNEGalleryStore) SNEGalleryStore.restore();
     });
   </script>
   <script src="photo-import.js"></script>
   <script src="photo-editor.js"></script>
   <script src="canvas-gestures.js"></script>
+  <script src="gallery-store.js"></script>
+  <script src="ref-clone.js"></script>
 </body>
 </html>

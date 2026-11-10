@@ -1,4 +1,4 @@
-// SNE Studio — Editor Foto (cahaya, warna, efek, detail, putar, looks).
+// SNE Studio — Editor Foto (cahaya, warna, efek, detail, putar, looks) di panel kanan.
 // Non-destruktif: nilai disimpan di slot.adj / pip.adj lalu "dipanggang" ke kanvas cache
 // yang dipakai mesin render utama lewat SNEFx.imageFor(). Semua olah piksel memakai
 // ImageData (bukan ctx.filter) supaya hasilnya sama di Safari/iPhone.
@@ -6,7 +6,7 @@
 (function () {
   const SMALL = !!(window.SNEImport && SNEImport.IS_SMALL_DEVICE);
   const BAKE_EDGE = SMALL ? 2048 : 3200; // sisi terpanjang hasil edit yang dipakai kanvas & export
-  const PREVIEW_EDGE = SMALL ? 640 : 900; // pratinjau realtime di editor
+  const LIVE_EDGE = SMALL ? 800 : 1080; // pratinjau realtime foto yang sedang diedit
 
   // [kunci, label, min] — maks selalu 100
   const GROUPS = [
@@ -242,12 +242,26 @@
   // Dipanggil mesin render utama untuk tiap slot/PIP. Cache dibuat ulang hanya bila foto atau adj berganti.
   function imageFor(obj) {
     const img = obj && obj.img;
-    if (!img || !obj.adj) return img || null;
-    if (obj._adjSrc !== (obj.origSrc || obj.src)) { // fotonya sudah diganti: edit lama tidak berlaku
+    if (!img) return null;
+    if (obj.adj && obj._adjSrc !== (obj.origSrc || obj.src)) { // fotonya sudah diganti: edit lama tidak berlaku
       obj.adj = null;
       obj._fx = null;
-      return img;
     }
+    // Foto yang sedang diedit di panel: pratinjau ringan supaya slider terasa instan
+    if (session && session.obj === obj && !window.SNEFx.fullRes) {
+      if (session.img !== img) { // fotonya berganti di tengah sesi (hapus BG, HD, ganti foto)
+        session.img = img;
+        session.prevSrc = process(img, {}, LIVE_EDGE);
+        session.live = null;
+      }
+      if (!obj.adj) return img;
+      const L = session.live;
+      if (!L || L.adj !== obj.adj || L.compare !== session.compare) {
+        session.live = { adj: obj.adj, compare: session.compare, canvas: process(session.prevSrc, session.compare ? geometryOf(obj.adj) : obj.adj, LIVE_EDGE) };
+      }
+      return session.live.canvas;
+    }
+    if (!obj.adj) return img;
     if (!obj._fx || obj._fx.img !== img || obj._fx.adj !== obj.adj) {
       obj._fx = { img, adj: obj.adj, canvas: process(img, obj.adj, BAKE_EDGE) };
     }
@@ -274,137 +288,66 @@
     return Object.values(checks).every(Boolean);
   }
 
-  window.SNEFx = { process, imageFor, isNeutral, selfCheck, LOOKS, BAKE_EDGE };
+  // fullRes = true dipasang mesin export supaya foto yang sedang diedit ikut dirender resolusi penuh
+  window.SNEFx = { process, imageFor, isNeutral, selfCheck, LOOKS, BAKE_EDGE, fullRes: false };
 
   // ===========================================================================
-  // UI EDITOR
+  // PANEL "EDIT FOTO" DI INSPECTOR KANAN (di HP: lembar bawah)
+  // Tidak ada halaman/modal terpisah: hasil langsung terlihat di kanvas utama.
+  // Selama panel aktif, foto yang diedit memakai pratinjau ringan (LIVE_EDGE);
+  // resolusi penuh dipanggang saat sesi berakhir atau saat export (SNEFx.fullRes).
   // ===========================================================================
-  const CSS = `
-  .pe-root{position:fixed;inset:0;z-index:70;display:flex;flex-direction:column;background:#0f0f11;color:#f4f4f2;font-family:'Plus Jakarta Sans',Arial,sans-serif;-webkit-user-select:none;user-select:none}
-  .pe-root[hidden]{display:none}
-  .pe-stage{flex:1;min-height:0;display:flex;flex-direction:column}
-  .pe-top{display:flex;align-items:center;gap:6px;padding:8px 10px;background:#17171a;border-bottom:1px solid #2a2a2f}
-  .pe-title{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.25;padding:0 4px}
-  .pe-title b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pe-title span{font-size:11px;color:#9a9aa3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .pe-btn{border:1px solid #34343a;background:#222226;color:#f4f4f2;border-radius:10px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;touch-action:manipulation}
-  .pe-btn:hover{background:#2c2c31}
-  .pe-btn:focus-visible,.pe-tab:focus-visible,.pe-look:focus-visible{outline:2px solid #fda29b;outline-offset:1px}
-  .pe-btn.pe-primary{background:#B42318;border-color:#B42318}
-  .pe-btn.pe-primary:hover{background:#9F1F16}
-  .pe-btn.pe-on{background:#f4f4f2;color:#17171a}
-  .pe-view{flex:1;min-height:0;position:relative;display:flex;align-items:center;justify-content:center;padding:10px;touch-action:none;cursor:ew-resize;overflow:hidden}
-  .pe-view canvas{max-width:100%;max-height:100%;border-radius:6px;box-shadow:0 8px 40px rgba(0,0,0,.55);background:repeating-conic-gradient(#2a2a2f 0 25%,#1c1c20 0 50%) 0 0/16px 16px}
-  .pe-hud{position:absolute;top:14px;left:50%;transform:translateX(-50%);min-width:190px;background:rgba(15,15,17,.86);border:1px solid #3a3a41;border-radius:12px;padding:8px 12px;font-size:12px;font-weight:700;display:flex;flex-wrap:wrap;justify-content:space-between;gap:4px 14px;opacity:0;transition:opacity .18s;pointer-events:none}
-  .pe-hud.pe-show{opacity:1}
-  .pe-hud-bar{flex-basis:100%;height:4px;border-radius:4px;background:#34343a;position:relative;overflow:hidden}
-  .pe-hud-bar i{position:absolute;top:0;bottom:0;background:#fda29b}
-  .pe-badge{position:absolute;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(15,15,17,.86);border-radius:999px;padding:4px 12px;font-size:11px;font-weight:700;pointer-events:none}
-  .pe-panel{background:#17171a;border-top:1px solid #2a2a2f;display:flex;flex-direction:column;max-height:46vh;min-height:0}
-  .pe-hist{width:100%;height:44px;flex-shrink:0;display:block;background:#101012;border-bottom:1px solid #2a2a2f}
-  .pe-tabs{display:flex;flex-shrink:0;gap:4px;padding:8px 10px 0;overflow-x:auto;scrollbar-width:none}
-  .pe-tab{flex:1 0 auto;border:0;background:transparent;color:#9a9aa3;font-size:12px;font-weight:700;padding:7px 10px;border-radius:9px;cursor:pointer;touch-action:manipulation}
-  .pe-tab.pe-on{background:#2c2c31;color:#fff}
-  .pe-body{padding:10px 12px 14px;overflow-y:auto;min-height:0;display:flex;flex-direction:column;gap:9px}
-  .pe-row{border-radius:10px;padding:6px 8px;border:1px solid transparent}
-  .pe-row.pe-on{border-color:#3a3a41;background:#1f1f23}
-  .pe-row-head{display:flex;justify-content:space-between;font-size:12px;font-weight:600;margin-bottom:3px;cursor:pointer}
-  .pe-row-head output{font-variant-numeric:tabular-nums;color:#fda29b;font-weight:700}
-  .pe-row input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;margin:10px 0 8px;border-radius:6px;background:#3a3a41;cursor:pointer}
-  .pe-row input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:20px;height:20px;border-radius:50%;background:#f4f4f2;border:0;box-shadow:0 1px 4px rgba(0,0,0,.6)}
-  .pe-row input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#f4f4f2;border:0;box-shadow:0 1px 4px rgba(0,0,0,.6)}
-  .pe-row.pe-on input[type=range]::-webkit-slider-thumb{background:#fda29b}
-  .pe-row.pe-on input[type=range]::-moz-range-thumb{background:#fda29b}
-  .pe-looks{display:grid;grid-auto-flow:column;grid-auto-columns:78px;gap:8px;overflow-x:auto;padding-bottom:4px}
-  .pe-look{border:2px solid transparent;background:#222226;border-radius:10px;padding:3px 3px 5px;color:#d6d6d2;font-size:11px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:4px}
-  .pe-look canvas{width:68px;height:68px;object-fit:cover;border-radius:7px;display:block}
-  .pe-look.pe-on{border-color:#f97066;color:#fff}
-  .pe-geo{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-  .pe-hint{font-size:11px;color:#9a9aa3;line-height:1.4}
-  @media (max-width:520px){.pe-title span{display:none}.pe-btn{padding:7px 9px}}
-  @media (min-width:1024px){
-    .pe-root{flex-direction:row}
-    .pe-panel{width:340px;max-height:none;border-top:0;border-left:1px solid #2a2a2f}
-    .pe-hist{height:84px}
-    .pe-looks{grid-auto-flow:row;grid-template-columns:repeat(3,1fr);grid-auto-columns:auto;overflow:visible}
-    .pe-look canvas{width:100%;height:auto;aspect-ratio:1}
-  }
-  @media (prefers-reduced-motion:reduce){.pe-hud{transition:none}}`;
+  const pane = document.getElementById("inspPanePhoto");
+  const $ = (id) => document.getElementById(id);
+  let session = null; // { obj, kind: "slot"|"pip", idx?, key, label, img, prevSrc, live, compare }
+  let paneActive = false, pendingTarget = null, activeTab = "looks", rafId = 0, chipSig = "";
 
-  let root = null, els = {};
-  let session = null; // { title, img, prevSrc, adj, onApply }
-  let activeTab = "looks", activeKey = "exposure", showOriginal = false, rafId = 0, hudTimer = 0;
+  const style = document.createElement("style");
+  style.textContent = `
+  .pe-chip{position:relative;width:46px;height:46px;border-radius:12px;overflow:hidden;border:2px solid var(--border-control);flex-shrink:0;padding:0;background:var(--surface-high);cursor:pointer}
+  .pe-chip img{width:100%;height:100%;object-fit:cover;display:block}
+  .pe-chip.on{border-color:var(--primary);box-shadow:0 0 0 2px var(--primary-light)}
+  .pe-chip span{position:absolute;left:3px;bottom:1px;font-size:10px;font-weight:800;color:#fff;text-shadow:0 0 3px #000,0 0 3px #000}
+  .pe-chip i{position:absolute;right:3px;top:3px;width:8px;height:8px;border-radius:50%;background:var(--primary);border:1.5px solid #fff}
+  .pe-look{border:2px solid transparent;background:var(--surface-low);border-radius:12px;padding:3px 3px 5px;color:var(--ink-secondary);font-size:11px;font-weight:700;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:3px;min-width:0}
+  .pe-look canvas{width:100%;aspect-ratio:1;border-radius:9px;display:block}
+  .pe-look.on{border-color:var(--primary);color:var(--primary)}
+  .pe-row label{cursor:pointer}
+  #peHist{image-rendering:auto}`;
+  document.head.appendChild(style);
 
-  function build() {
-    const style = document.createElement("style");
-    style.textContent = CSS;
-    document.head.appendChild(style);
-
-    root = document.createElement("div");
-    root.className = "pe-root";
-    root.hidden = true;
-    root.setAttribute("role", "dialog");
-    root.setAttribute("aria-modal", "true");
-    root.setAttribute("aria-label", "Editor foto");
-    root.innerHTML = `
-      <div class="pe-stage">
-        <div class="pe-top">
-          <button type="button" class="pe-btn" data-pe="cancel" aria-label="Batal dan tutup editor">✕ Batal</button>
-          <div class="pe-title"><b data-pe="title"></b><span>Geser di foto: ↔ atur nilai · ↕ ganti alat · klik ganda nama alat untuk reset</span></div>
-          <button type="button" class="pe-btn" data-pe="compare" title="Tahan untuk melihat foto sebelum diedit">◐ Asli</button>
-          <button type="button" class="pe-btn" data-pe="reset" title="Kembalikan semua pengaturan">↺ Reset</button>
-          <button type="button" class="pe-btn pe-primary" data-pe="apply">✓ Terapkan</button>
-        </div>
-        <div class="pe-view" data-pe="view">
-          <canvas data-pe="canvas"></canvas>
-          <div class="pe-hud" data-pe="hud"><span data-pe="hudName"></span><span data-pe="hudVal"></span><div class="pe-hud-bar"><i data-pe="hudFill"></i></div></div>
-          <div class="pe-badge" data-pe="badge" hidden>Foto asli</div>
-        </div>
+  pane.innerHTML = `
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <div class="min-w-0">
+        <h2 class="text-sm font-bold text-[#171717]">Edit Foto</h2>
+        <p id="peTarget" class="text-xs text-[#737373] truncate">Ketuk foto di kanvas untuk memilih</p>
       </div>
-      <div class="pe-panel">
-        <canvas class="pe-hist" data-pe="hist" width="256" height="84" aria-hidden="true"></canvas>
-        <div class="pe-tabs" data-pe="tabs" role="tablist"></div>
-        <div class="pe-body" data-pe="body"></div>
-      </div>`;
-    document.body.appendChild(root);
-    root.querySelectorAll("[data-pe]").forEach((el) => (els[el.getAttribute("data-pe")] = el));
+      <div class="flex items-center gap-1 shrink-0">
+        <button type="button" id="peCompare" class="sne-btn-secondary h-8 px-2.5 text-xs" title="Tahan untuk melihat foto sebelum diedit">Asli</button>
+        <button type="button" id="peReset" class="sne-btn-secondary h-8 px-2.5 text-xs" title="Hapus semua edit foto ini">Reset</button>
+      </div>
+    </div>
+    <div id="peTargets" class="flex gap-1.5 overflow-x-auto pb-1" aria-label="Pilih foto yang diedit"></div>
+    <div id="peEditor" class="space-y-3">
+      <canvas id="peHist" width="256" height="56" class="hidden lg:block w-full h-12 rounded-xl border border-[#E7E7E4] bg-[#F7F7F5]" aria-hidden="true"></canvas>
+      <div id="peTabs" class="sne-segmented grid grid-cols-6 gap-1" role="tablist"></div>
+      <div id="peBody" class="space-y-2.5"></div>
+      <div class="pt-3 border-t border-[#E7E7E4] grid grid-cols-2 gap-1.5">
+        <button type="button" id="peReplace" class="sne-btn-secondary py-2 text-xs">Ganti Foto</button>
+        <button type="button" id="peSaveGallery" class="sne-btn-secondary py-2 text-xs" title="Simpan hasil edit sebagai foto baru di Galeri">Simpan ke Galeri</button>
+        <button type="button" id="peRemoveBg" class="sne-btn-secondary py-2 text-xs">Hapus Background</button>
+        <button type="button" id="peEnhance" class="sne-btn-secondary py-2 text-xs">HD &amp; Halus</button>
+      </div>
+    </div>`;
 
-    const tabs = [["looks", "Looks"], ...GROUPS.map((g) => [g.id, g.label]), ["geo", "Putar"]];
-    els.tabs.innerHTML = tabs.map(([id, label]) => `<button type="button" class="pe-tab" role="tab" data-tab="${id}">${label}</button>`).join("");
-    els.tabs.addEventListener("click", (e) => {
-      const b = e.target.closest("[data-tab]");
-      if (b) setTab(b.getAttribute("data-tab"));
-    });
+  const TABS = [["looks", "Looks"], ...GROUPS.map((g) => [g.id, g.label]), ["geo", "Putar"]];
+  $("peTabs").innerHTML = TABS.map(([id, label]) => `<button type="button" role="tab" data-tab="${id}" class="sne-seg-item py-1.5 text-[11px] text-center">${label}</button>`).join("");
+  $("peTabs").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tab]");
+    if (b) { activeTab = b.getAttribute("data-tab"); renderBody(); }
+  });
 
-    els.cancel.addEventListener("click", close);
-    els.apply.addEventListener("click", apply);
-    els.reset.addEventListener("click", () => {
-      session.adj = {};
-      renderBody();
-      schedule();
-    });
-    const cmp = (on) => () => {
-      if (!session || showOriginal === on) return;
-      showOriginal = on;
-      els.compare.classList.toggle("pe-on", on);
-      els.badge.hidden = !on;
-      schedule();
-    };
-    els.compare.addEventListener("pointerdown", cmp(true));
-    ["pointerup", "pointerleave", "pointercancel", "blur"].forEach((ev) => els.compare.addEventListener(ev, cmp(false)));
-    // Keyboard (klik tanpa pointer): jadi tombol toggle
-    els.compare.addEventListener("click", (e) => { if (e.detail === 0) cmp(!showOriginal)(); });
-
-    bindSwipe();
-
-    // Tangkap tombol lebih dulu supaya pintasan kanvas utama (Delete, panah, dll.) tidak ikut jalan
-    window.addEventListener("keydown", (e) => {
-      if (!session) return;
-      e.stopImmediatePropagation();
-      if (e.key === "Escape") { e.preventDefault(); close(); }
-      else if (e.key === "Enter" && e.target.tagName !== "BUTTON") { e.preventDefault(); apply(); }
-    }, true);
-  }
+  const adjOf = () => (session && session.obj.adj) || {};
 
   function paramMeta(key) {
     if (key === "straighten") return { min: -30, max: 30, unit: "°" };
@@ -413,161 +356,19 @@
   }
   const fmt = (key, v) => (v > 0 && paramMeta(key).min < 0 ? "+" : "") + v + paramMeta(key).unit;
 
-  function rowHtml(key) {
-    const m = paramMeta(key), v = session.adj[key] || 0;
-    return `<div class="pe-row${key === activeKey ? " pe-on" : ""}" data-key="${key}">
-      <label class="pe-row-head" for="pe_${key}" title="Klik ganda untuk reset"><span>${LABELS[key]}</span><output>${fmt(key, v)}</output></label>
-      <input type="range" id="pe_${key}" min="${m.min}" max="${m.max}" step="1" value="${v}" />
-    </div>`;
-  }
-
-  function setValue(key, val, fromSlider) {
-    const m = paramMeta(key);
-    val = Math.max(m.min, Math.min(m.max, Math.round(val)));
-    if (val) session.adj[key] = val; else delete session.adj[key];
-    if (PIXEL_KEYS.includes(key)) delete session.adj.look;
-    const row = els.body.querySelector(`[data-key="${key}"]`);
-    if (row) {
-      row.querySelector("output").textContent = fmt(key, val);
-      if (!fromSlider) row.querySelector("input").value = val;
-    }
-    schedule();
-    return val;
-  }
-
-  function setActiveKey(key) {
-    activeKey = key;
-    els.body.querySelectorAll(".pe-row").forEach((r) => r.classList.toggle("pe-on", r.getAttribute("data-key") === key));
-  }
-
-  function renderBody() {
-    const body = els.body;
-    if (activeTab === "looks") {
-      body.innerHTML = `<div class="pe-looks"></div><p class="pe-hint">Pilih look sebagai titik awal, lalu sempurnakan di tab Cahaya, Warna, Efek, dan Detail.</p>`;
-      const grid = body.firstChild;
-      const thumbSrc = process(session.prevSrc, geometryOf(session.adj), 150);
-      const current = session.adj.look || (hasPixelEdits(session.adj) ? "" : "asli");
-      LOOKS.forEach(([id, name, vals]) => {
-        const btn = document.createElement("button");
-        btn.type = "button";
-        btn.className = "pe-look" + (id === current ? " pe-on" : "");
-        const th = process(thumbSrc, vals, 150);
-        // potong tengah jadi persegi supaya grid rapi
-        const sq = document.createElement("canvas");
-        const s = Math.min(th.width, th.height);
-        sq.width = sq.height = s;
-        sq.getContext("2d").drawImage(th, (th.width - s) / 2, (th.height - s) / 2, s, s, 0, 0, s, s);
-        btn.append(sq, name);
-        btn.addEventListener("click", () => {
-          session.adj = { ...geometryOf(session.adj), ...vals, ...(id === "asli" ? {} : { look: id }) };
-          grid.querySelectorAll(".pe-look").forEach((b) => b.classList.toggle("pe-on", b === btn));
-          schedule();
-        });
-        grid.appendChild(btn);
-      });
-    } else if (activeTab === "geo") {
-      body.innerHTML = `<div class="pe-geo">
-          <button type="button" class="pe-btn" data-geo="l">⟲ Putar kiri 90°</button>
-          <button type="button" class="pe-btn" data-geo="r">⟳ Putar kanan 90°</button>
-          <button type="button" class="pe-btn" data-geo="h">⇋ Balik horizontal</button>
-          <button type="button" class="pe-btn" data-geo="v">⇅ Balik vertikal</button>
-        </div>${rowHtml("straighten")}`;
-      body.querySelectorAll("[data-geo]").forEach((b) => b.addEventListener("click", () => {
-        const a = session.adj, g = b.getAttribute("data-geo");
-        if (g === "l" || g === "r") {
-          const rot = (((a.rot || 0) + (g === "r" ? 90 : 270)) % 360);
-          if (rot) a.rot = rot; else delete a.rot;
-        } else {
-          const k = g === "h" ? "flipH" : "flipV";
-          if (a[k]) delete a[k]; else a[k] = true;
-        }
-        schedule();
-      }));
-      setActiveKey("straighten");
-    } else {
-      const grp = GROUPS.find((g) => g.id === activeTab);
-      if (!grp.params.some((p) => p[0] === activeKey)) activeKey = grp.params[0][0];
-      body.innerHTML = grp.params.map((p) => rowHtml(p[0])).join("");
-    }
-    body.querySelectorAll(".pe-row").forEach((row) => {
-      const key = row.getAttribute("data-key"), input = row.querySelector("input");
-      input.addEventListener("input", () => { setActiveKey(key); setValue(key, +input.value, true); });
-      input.addEventListener("pointerdown", () => setActiveKey(key));
-      input.addEventListener("focus", () => setActiveKey(key));
-      row.querySelector(".pe-row-head").addEventListener("dblclick", (e) => { e.preventDefault(); setValue(key, 0); });
-    });
-  }
-
-  function setTab(id) {
-    activeTab = id;
-    els.tabs.querySelectorAll(".pe-tab").forEach((b) => {
-      const on = b.getAttribute("data-tab") === id;
-      b.classList.toggle("pe-on", on);
-      b.setAttribute("aria-selected", on ? "true" : "false");
-    });
-    renderBody();
-  }
-
-  function showHud(key, val) {
-    const m = paramMeta(key);
-    els.hudName.textContent = LABELS[key];
-    els.hudVal.textContent = fmt(key, val);
-    const zero = ((0 - m.min) / (m.max - m.min)) * 100, pos = ((val - m.min) / (m.max - m.min)) * 100;
-    els.hudFill.style.left = Math.min(zero, pos) + "%";
-    els.hudFill.style.width = Math.abs(pos - zero) + "%";
-    els.hud.classList.add("pe-show");
-    clearTimeout(hudTimer);
-    hudTimer = setTimeout(() => els.hud.classList.remove("pe-show"), 900);
-  }
-
-  // Gestur di foto: geser horizontal = ubah nilai alat aktif, geser vertikal = pindah alat
-  function bindSwipe() {
-    let g = null;
-    const keysOfTab = () => (activeTab === "geo" ? ["straighten"] : (GROUPS.find((x) => x.id === activeTab) || GROUPS[0]).params.map((p) => p[0]));
-    els.view.addEventListener("pointerdown", (e) => {
-      if (!session || !e.isPrimary) return;
-      if (activeTab === "looks") setTab("light");
-      g = { x: e.clientX, y: e.clientY, axis: null, start: session.adj[activeKey] || 0, idx: keysOfTab().indexOf(activeKey) };
-      els.view.setPointerCapture(e.pointerId);
-      showHud(activeKey, g.start);
-    });
-    els.view.addEventListener("pointermove", (e) => {
-      if (!g) return;
-      const dx = e.clientX - g.x, dy = e.clientY - g.y;
-      if (!g.axis) {
-        if (Math.hypot(dx, dy) < 8) return;
-        g.axis = Math.abs(dx) >= Math.abs(dy) ? "x" : "y";
-      }
-      if (g.axis === "x") {
-        const m = paramMeta(activeKey);
-        const val = setValue(activeKey, g.start + (dx / Math.max(200, els.view.clientWidth)) * (m.max - m.min) * 1.1);
-        showHud(activeKey, val);
-      } else {
-        const keys = keysOfTab();
-        const idx = Math.max(0, Math.min(keys.length - 1, g.idx + Math.round(dy / 38)));
-        if (keys[idx] !== activeKey) {
-          setActiveKey(keys[idx]);
-          els.body.querySelector(".pe-row.pe-on")?.scrollIntoView({ block: "nearest" });
-        }
-        showHud(activeKey, session.adj[activeKey] || 0);
-      }
-    });
-    const end = () => { g = null; };
-    els.view.addEventListener("pointerup", end);
-    els.view.addEventListener("pointercancel", end);
-  }
-
-  function drawHistogram(src) {
-    const hc = els.hist, hx = hc.getContext("2d");
+  function drawHistogram() {
+    if (!session) return;
+    const src = session.live && session.obj.adj ? session.live.canvas : session.prevSrc;
+    const hc = $("peHist"), hx = hc.getContext("2d");
     const data = src.getContext("2d").getImageData(0, 0, src.width, src.height).data;
     const bins = [new Uint32Array(256), new Uint32Array(256), new Uint32Array(256)];
-    for (let i = 0; i < data.length; i += 16) { bins[0][data[i]]++; bins[1][data[i + 1]]++; bins[2][data[i + 2]]++; }
+    for (let i = 0; i < data.length; i += 32) { bins[0][data[i]]++; bins[1][data[i + 1]]++; bins[2][data[i + 2]]++; }
     let peak = 1;
     for (let c = 0; c < 3; c++) for (let i = 2; i < 254; i++) if (bins[c][i] > peak) peak = bins[c][i];
     hx.globalCompositeOperation = "source-over";
     hx.clearRect(0, 0, hc.width, hc.height);
-    hx.globalCompositeOperation = "screen";
-    ["#e5484d", "#46a758", "#3e8ee6"].forEach((col, c) => {
+    hx.globalCompositeOperation = "multiply";
+    ["#f2777a", "#6cc47f", "#6aa9ee"].forEach((col, c) => {
       hx.fillStyle = col;
       hx.beginPath();
       hx.moveTo(0, hc.height);
@@ -581,132 +382,293 @@
     if (rafId) return;
     rafId = requestAnimationFrame(() => {
       rafId = 0;
-      if (!session) return;
-      const out = process(session.prevSrc, showOriginal ? {} : session.adj, PREVIEW_EDGE);
-      const cv = els.canvas;
-      if (cv.width !== out.width || cv.height !== out.height) { cv.width = out.width; cv.height = out.height; }
-      const cx = cv.getContext("2d");
-      cx.clearRect(0, 0, cv.width, cv.height);
-      cx.drawImage(out, 0, 0);
-      drawHistogram(out);
+      renderCanvas();
+      drawHistogram();
     });
   }
 
-  function open(opts) {
-    if (!opts.img) return showToast("Foto belum siap diedit");
-    if (!root) build();
-    session = { title: opts.title, img: opts.img, adj: { ...(opts.adj || {}) }, onApply: opts.onApply, prevSrc: process(opts.img, {}, PREVIEW_EDGE), opener: document.activeElement };
-    els.title.textContent = opts.title;
-    showOriginal = false;
-    els.badge.hidden = true;
-    root.hidden = false;
-    setTab("looks");
+  // Satu-satunya jalan mengubah edit foto: objek adj selalu diganti baru (jadi kunci cache)
+  function setAdj(next, done) {
+    if (!session) return;
+    const o = session.obj;
+    o.adj = isNeutral(next) ? null : next;
+    o._adjSrc = o.origSrc || o.src;
     schedule();
-    els.apply.focus({ preventScroll: true });
+    if (done) commit();
+  }
+  function commit() {
+    pushHistorySnapshot();
+    renderTargets();
   }
 
-  function close() {
-    if (!session) return;
-    const opener = session.opener;
-    session = null;
-    root.hidden = true;
-    if (opener && opener.focus) opener.focus({ preventScroll: true });
+  function setValue(key, val, done) {
+    const m = paramMeta(key);
+    val = Math.max(m.min, Math.min(m.max, Math.round(val)));
+    const next = { ...adjOf() };
+    if (val) next[key] = val; else delete next[key];
+    if (PIXEL_KEYS.includes(key)) delete next.look;
+    const row = $("peBody").querySelector(`[data-key="${key}"]`);
+    if (row) {
+      row.querySelector("output").textContent = fmt(key, val);
+      const input = row.querySelector("input");
+      if (+input.value !== val) input.value = val;
+    }
+    setAdj(next, done);
   }
 
-  function apply() {
-    if (!session) return;
-    const { adj, onApply } = session;
-    const result = isNeutral(adj) ? null : { ...adj };
-    close();
-    showToast("Menerapkan hasil edit…");
-    // beri kesempatan toast tampil sebelum proses resolusi penuh
-    setTimeout(() => onApply(result), 30);
+  function rowHtml(key) {
+    const m = paramMeta(key), v = adjOf()[key] || 0;
+    return `<div class="pe-row" data-key="${key}">
+      <div class="flex justify-between text-xs mb-1">
+        <label for="pe_${key}" class="font-semibold text-[#525252]" title="Klik ganda untuk reset">${LABELS[key]}</label>
+        <output class="tabular-nums font-bold text-[#171717]">${fmt(key, v)}</output>
+      </div>
+      <input type="range" id="pe_${key}" min="${m.min}" max="${m.max}" step="1" value="${v}" class="w-full" />
+    </div>`;
   }
 
-  // ----- Target yang bisa diedit -------------------------------------------
-  const currentAdj = (obj) => (obj.adj && obj._adjSrc === (obj.origSrc || obj.src) ? obj.adj : null);
+  function renderBody() {
+    const body = $("peBody");
+    $("peTabs").querySelectorAll("[data-tab]").forEach((b) => {
+      const on = b.getAttribute("data-tab") === activeTab;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    if (!session) { body.innerHTML = ""; return; }
+
+    if (activeTab === "looks") {
+      body.innerHTML = `<div class="grid grid-cols-4 lg:grid-cols-3 gap-1.5"></div>`;
+      const grid = body.firstChild;
+      const a = adjOf();
+      const thumbSrc = process(session.prevSrc, geometryOf(a), 132);
+      const current = a.look || (hasPixelEdits(a) ? "" : "asli");
+      LOOKS.forEach(([id, name, vals]) => {
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "pe-look" + (id === current ? " on" : "");
+        const th = process(thumbSrc, vals, 132);
+        const sq = document.createElement("canvas"); // potong tengah jadi persegi supaya grid rapi
+        const s = Math.min(th.width, th.height);
+        sq.width = sq.height = s;
+        sq.getContext("2d").drawImage(th, (th.width - s) / 2, (th.height - s) / 2, s, s, 0, 0, s, s);
+        btn.append(sq, name);
+        btn.addEventListener("click", () => {
+          grid.querySelectorAll(".pe-look").forEach((b) => b.classList.toggle("on", b === btn));
+          setAdj({ ...geometryOf(adjOf()), ...vals, ...(id === "asli" ? {} : { look: id }) }, true);
+        });
+        grid.appendChild(btn);
+      });
+      return;
+    }
+
+    if (activeTab === "geo") {
+      body.innerHTML = `<div class="grid grid-cols-2 gap-1.5">
+          <button type="button" class="sne-btn-secondary py-2 text-xs" data-geo="l">⟲ Putar kiri</button>
+          <button type="button" class="sne-btn-secondary py-2 text-xs" data-geo="r">⟳ Putar kanan</button>
+          <button type="button" class="sne-btn-secondary py-2 text-xs" data-geo="h">⇋ Balik horizontal</button>
+          <button type="button" class="sne-btn-secondary py-2 text-xs" data-geo="v">⇅ Balik vertikal</button>
+        </div>${rowHtml("straighten")}
+        <p class="text-[11px] text-[#737373] leading-snug">Zoom &amp; posisi: cubit dua jari atau roda mouse di foto, lalu geser fotonya.</p>`;
+      body.querySelectorAll("[data-geo]").forEach((b) => b.addEventListener("click", () => {
+        const a = { ...adjOf() }, g = b.getAttribute("data-geo");
+        if (g === "l" || g === "r") {
+          const rot = ((a.rot || 0) + (g === "r" ? 90 : 270)) % 360;
+          if (rot) a.rot = rot; else delete a.rot;
+        } else {
+          const k = g === "h" ? "flipH" : "flipV";
+          if (a[k]) delete a[k]; else a[k] = true;
+        }
+        setAdj(a, true);
+      }));
+    } else {
+      body.innerHTML = GROUPS.find((g) => g.id === activeTab).params.map((p) => rowHtml(p[0])).join("");
+    }
+
+    body.querySelectorAll(".pe-row").forEach((row) => {
+      const key = row.getAttribute("data-key"), input = row.querySelector("input");
+      input.addEventListener("input", () => setValue(key, +input.value, false));
+      input.addEventListener("change", commit);
+      row.querySelector("label").addEventListener("dblclick", (e) => { e.preventDefault(); setValue(key, 0, true); });
+    });
+  }
+
+  // Deretan foto yang bisa diedit (slot aktif + stiker PIP). Dibangun ulang hanya bila ada yang berubah.
+  function renderTargets() {
+    const count = getEffectiveSlots().length;
+    const items = [];
+    for (let i = 0; i < count; i++) {
+      const s = state.slots[i];
+      if (s && s.img) items.push({ t: "slot:" + i, src: s.src, n: String(i + 1), title: `Foto Slot #${i + 1}`, edited: !!s.adj });
+    }
+    state.pipPhotos.forEach((p, i) => { if (p.img) items.push({ t: "pip:" + p.id, src: p.src, n: "P" + (i + 1), title: `Stiker PIP ${i + 1}`, edited: !!p.adj }); });
+    const sig = items.map((it) => it.t + it.src.length + it.src.slice(-12) + it.edited).join("|") + "@" + (session ? session.key : "");
+    if (sig === chipSig) return;
+    chipSig = sig;
+    $("peTargets").innerHTML = items.map((it) =>
+      `<button type="button" class="pe-chip${session && session.key === it.t ? " on" : ""}" data-t="${it.t}" title="${it.title}"><img src="${it.src}" alt="${it.title}" /><span>${it.n}</span>${it.edited ? "<i></i>" : ""}</button>`).join("");
+  }
+  $("peTargets").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-t]");
+    if (!b) return;
+    const [kind, id] = b.getAttribute("data-t").split(/:(.+)/);
+    if (kind === "slot") openSlot(+id); else openPip(id);
+  });
+
+  function resolve(t) {
+    if (t && t.kind === "pip") {
+      const p = state.pipPhotos.find((x) => x.id === t.id);
+      if (p && p.img) return { obj: p, kind: "pip", key: "pip:" + p.id, label: "Stiker PIP" };
+    }
+    const count = getEffectiveSlots().length;
+    const idx = Math.max(0, Math.min((t && t.kind === "slot" ? t.idx : state.selectedSlotIndex) || 0, count - 1));
+    const s = state.slots[idx];
+    return s && s.img ? { obj: s, kind: "slot", idx, key: "slot:" + idx, label: `Foto Slot #${idx + 1}` } : null;
+  }
+
+  function startSession(target) {
+    const r = resolve(target);
+    const previous = session && session.obj;
+    if (!r) session = null;
+    else if (!session || session.obj !== r.obj) session = { ...r, img: r.obj.img, prevSrc: process(r.obj.img, {}, LIVE_EDGE), live: null, compare: false };
+    else Object.assign(session, r);
+    const isSlot = !!session && session.kind === "slot";
+    $("peTarget").textContent = session ? `${session.label} · ketuk foto lain untuk pindah` : "Belum ada foto. Unggah foto dulu.";
+    $("peEditor").classList.toggle("hidden", !session);
+    ["peReplace", "peRemoveBg", "peEnhance"].forEach((id) => $(id).classList.toggle("hidden", !isSlot));
+    renderTargets();
+    renderBody();
+    if (previous !== (session && session.obj)) schedule();
+    else drawHistogram();
+  }
+
+  // Dipanggil showInspectorPane() di index.html saat tab Edit Foto ditampilkan / ditinggalkan
+  function activate() {
+    paneActive = true;
+    startSession(pendingTarget || (session ? (session.kind === "pip" ? { kind: "pip", id: session.obj.id } : { kind: "slot", idx: state.selectedSlotIndex || 0 }) : null));
+    pendingTarget = null;
+  }
+  function deactivate() {
+    if (!paneActive) return;
+    paneActive = false;
+    if (session) {
+      session = null;
+      setTimeout(renderCanvas, 60); // panggang resolusi penuh setelah panel berganti
+    }
+  }
+  // Dipanggil syncAllUI(): slot terpilih / foto / undo bisa berubah dari tempat lain
+  function sync() {
+    if (!paneActive) return;
+    const want = session && session.kind === "pip" && state.pipPhotos.includes(session.obj)
+      ? { kind: "pip", id: session.obj.id }
+      : { kind: "slot", idx: state.selectedSlotIndex || 0 };
+    const r = resolve(want);
+    if (!r || !session || r.obj !== session.obj) return startSession(want);
+    Object.assign(session, r);
+    renderTargets();
+    $("peTarget").textContent = `${session.label} · ketuk foto lain untuk pindah`;
+    if (activeTab === "looks") {
+      const cur = adjOf().look || (hasPixelEdits(adjOf()) ? "" : "asli");
+      $("peBody").querySelectorAll(".pe-look").forEach((b, i) => b.classList.toggle("on", LOOKS[i][0] === cur));
+    } else {
+      $("peBody").querySelectorAll(".pe-row").forEach((row) => {
+        const key = row.getAttribute("data-key"), v = adjOf()[key] || 0;
+        row.querySelector("input").value = v;
+        row.querySelector("output").textContent = fmt(key, v);
+      });
+    }
+  }
+
+  const showPhotoPane = () => (isMobileLayout() ? setMobileView("photo") : showInspectorPane("photo"));
 
   function openSlot(idx) {
     const slot = state.slots[idx];
     if (!slot || !slot.img) return showToast("Slot ini belum berisi foto");
     state.selectedSlotIndex = idx;
-    const lbl = document.getElementById("canvaActiveSlotLabel");
+    const lbl = $("canvaActiveSlotLabel");
     if (lbl) lbl.textContent = `Mengedit: Foto Slot #${idx + 1}`;
-    open({
-      title: `Edit Foto · Slot #${idx + 1}`,
-      img: slot.img,
-      adj: currentAdj(slot),
-      onApply: (adj) => {
-        slot.adj = adj;
-        slot._adjSrc = slot.origSrc || slot.src;
-        renderCanvas();
-        pushHistorySnapshot();
-        renderPhotoSlotsManager();
-        showToast(adj ? `Edit Foto Slot #${idx + 1} diterapkan` : `Foto Slot #${idx + 1} kembali tanpa edit`);
-      }
-    });
+    pendingTarget = { kind: "slot", idx };
+    showPhotoPane();
   }
-
   function openPip(id) {
-    const pip = state.pipPhotos.find((p) => p.id === id);
-    if (!pip || !pip.img) return;
-    open({
-      title: "Edit Foto · Stiker PIP",
-      img: pip.img,
-      adj: currentAdj(pip),
-      onApply: (adj) => {
-        pip.adj = adj;
-        pip._adjSrc = pip.origSrc || pip.src;
-        renderCanvas();
-        showToast(adj ? "Edit foto PIP diterapkan" : "Foto PIP kembali tanpa edit");
-      }
-    });
+    pendingTarget = { kind: "pip", id };
+    showPhotoPane();
   }
-
-  // Foto Galeri: hasil edit dipanggang jadi gambar baru; aslinya disimpan supaya bisa diedit ulang
-  async function openGallery(itemId) {
+  // "Edit" di Galeri: pasang foto ke slot aktif lalu buka panel editnya
+  async function editGalleryItem(itemId) {
     const item = state.galleryItems.find((g) => g.id === itemId);
-    if (!item) return;
-    const srcUrl = item.origSrc || item.src;
-    const img = await loadImage(srcUrl);
-    open({
-      title: `Edit Foto Galeri · ${item.label || "Foto"}`,
-      img,
-      adj: item.adj,
-      onApply: (adj) => {
-        if (adj) {
-          const maxEdge = (window.SNEImport && SNEImport.MAX_EDGE) || BAKE_EDGE;
-          const out = process(img, adj, maxEdge);
-          item.origSrc = srcUrl;
-          item.adj = adj;
-          item.src = srcUrl.startsWith("data:image/png") ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.95);
-        } else {
-          item.src = srcUrl;
-          item.adj = null;
-        }
-        renderStudioGalleryGrid();
-        showToast(adj ? "Foto Galeri diperbarui. Klik Pakai untuk memasangnya." : "Foto Galeri kembali ke asli");
-      }
-    });
+    const img = item && (await loadImage(item.src));
+    const idx = Math.min(state.selectedSlotIndex || 0, getEffectiveSlots().length - 1);
+    if (!img || !state.slots[idx]) return;
+    Object.assign(state.slots[idx], { src: item.src, origSrc: item.src, img, zoom: 1.0, panX: 0, panY: 0, isUserUploaded: true });
+    pushHistorySnapshot();
+    syncAllUI();
+    renderCanvas();
+    openSlot(idx);
+    showToast(`Foto dipasang di Slot #${idx + 1}. Atur di panel Edit Foto.`);
   }
 
-  window.SNEEditor = { open, openSlot, openPip, openGallery, isOpen: () => !!session };
+  // ----- Tombol panel --------------------------------------------------------
+  const cmp = (on) => () => {
+    if (!session || session.compare === on) return;
+    session.compare = on;
+    $("peCompare").classList.toggle("active", on);
+    schedule();
+  };
+  $("peCompare").addEventListener("pointerdown", cmp(true));
+  ["pointerup", "pointerleave", "pointercancel", "blur"].forEach((ev) => $("peCompare").addEventListener(ev, cmp(false)));
+  $("peCompare").addEventListener("click", (e) => { if (e.detail === 0 && session) cmp(!session.compare)(); }); // keyboard: toggle
+
+  $("peReset").addEventListener("click", () => {
+    if (!session) return;
+    setAdj({}, true);
+    renderBody();
+    showToast(`${session.label}: semua edit dihapus`);
+  });
+  const slotTool = (btnId) => () => {
+    if (!session || session.kind !== "slot") return;
+    state.selectedSlotIndex = session.idx;
+    $(btnId).click();
+  };
+  $("peReplace").addEventListener("click", slotTool("singleSlotPhotoInput"));
+  $("peRemoveBg").addEventListener("click", slotTool("btnCanvaRemoveBg"));
+  $("peEnhance").addEventListener("click", slotTool("btnCanvaEnhanceHd"));
+  $("peSaveGallery").addEventListener("click", () => {
+    if (!session) return;
+    const o = session.obj;
+    const out = process(o.img, o.adj || {}, (window.SNEImport && SNEImport.MAX_EDGE) || BAKE_EDGE);
+    const url = String(o.src).startsWith("data:image/png") ? out.toDataURL("image/png") : out.toDataURL("image/jpeg", 0.95);
+    addPhotoToStudioGallery(url, `${session.label} (edit)`);
+    showToast("Hasil edit disimpan ke Galeri");
+  });
+
+  window.SNEEditor = { activate, deactivate, sync, openSlot, openPip, editGalleryItem, isActive: () => paneActive };
 
   // ===========================================================================
-  // KETUK FOTO DI KANVAS -> LANGSUNG BUKA EDITOR
+  // KETUK DI KANVAS: foto -> panel Edit Foto, teks -> panel Teks, ketuk ganda teks -> ketik
   // Hanya ketukan singkat tanpa geser; menggeser tetap berarti pan/drag seperti biasa.
   // ===========================================================================
-  let tap = null;
+  let tap = null, lastTextTap = { id: null, t: 0 };
   canvas.addEventListener("pointerdown", (e) => {
     tap = e.isPrimary ? { x: e.clientX, y: e.clientY, t: performance.now() } : null;
   });
   canvas.addEventListener("pointerup", (e) => {
     if (!tap || !e.isPrimary) return;
-    const moved = Math.hypot(e.clientX - tap.x, e.clientY - tap.y), dt = performance.now() - tap.t;
+    const now = performance.now();
+    const moved = Math.hypot(e.clientX - tap.x, e.clientY - tap.y), dt = now - tap.t;
     tap = null;
     if (moved > 6 || dt > 400) return;
     const { x, y } = getCanvasCoords(e);
-    if (findHitLayer(x, y) || checkActiveLayerHandleHit(x, y)) return; // itu teks, bukan foto
+    if (checkActiveLayerHandleHit(x, y)) return;
+    const layer = state.interactionMode === "text" ? findHitLayer(x, y) : null;
+    if (layer) {
+      // dblclick bawaan tidak muncul di layar sentuh, jadi ketuk ganda dideteksi di sini
+      const isDouble = e.pointerType !== "mouse" && lastTextTap.id === layer.id && now - lastTextTap.t < 380;
+      lastTextTap = { id: layer.id, t: now };
+      if (isDouble) beginTextEdit(layer);
+      else if (!isMobileLayout()) showInspectorPane("text");
+      else if (document.body.dataset.mobView === "photo") setMobileView("right");
+      return;
+    }
     const pip = findHitPipPhoto(x, y);
     if (pip) return openPip(pip.id);
     openSlot(findHitSlotIndex(x, y));
