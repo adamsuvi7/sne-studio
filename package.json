@@ -1,0 +1,10 @@
+{
+  "name": "sne-studio-instastory",
+  "version": "2.4.0",
+  "private": true,
+  "description": "SNE Studio — Studio Tipografi, Kolase & Edit Foto Instagram Story (24 Template, 152 Font, Canva BG Remover & HD Denoise)",
+  "scripts": {
+    "start": "npx serve .",
+    "build": "echo 'Static bundle ready for Vercel'"
+  }
+}
