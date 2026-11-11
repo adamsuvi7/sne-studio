@@ -608,6 +608,10 @@
       el._gain = ac.createGain();
       el._gain.connect(master);
     }
+    // Volume diatur node gain; volume/muted elemen ikut memotong sinyal ke WebAudio (Chrome),
+    // dan syncMedia sempat menyetelnya 0 saat jeda sebelum elemen tersambung -> video bisu.
+    if (el.volume !== 1) el.volume = 1;
+    if (el.muted) el.muted = false;
     const sig = (c.voice || "none") + "|" + !!c.denoise;
     if (el._sig !== sig) {
       try { el._src.disconnect(); } catch (e) {}
