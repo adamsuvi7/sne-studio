@@ -49,12 +49,31 @@
     ["Kanit", "400;700;900"], ["Barlow Condensed", "400;700;900"], ["Alfa Slab One", null], ["Sacramento", null], ["Kaushan Script", null],
     ["Yellowtail", null], ["Amatic SC", "400;700"], ["Gloria Hallelujah", null], ["Rock Salt", null], ["Special Elite", null],
     ["Courier Prime", "400;700"], ["Roboto", "400;700;900"], ["Open Sans", "400;700;800"], ["Lexend", "400;700;900"], ["Outfit", "400;700;900"],
-    ["Sora", "400;700;800"], ["Manrope", "400;700;800"], ["Bricolage Grotesque", "400;700;800"], ["Chakra Petch", "400;700"]
+    ["Sora", "400;700;800"], ["Manrope", "400;700;800"], ["Bricolage Grotesque", "400;700;800"], ["Chakra Petch", "400;700"],
+    ["Alex Brush", null], ["Berkshire Swash", null], ["Carter One", null], ["Fraunces", "400;700;900"], ["Shrikhand", null]
   ];
+  // <option> font: 65 pilihan populer + pustaka font tambahan Studio Foto (fonts-extra.js, dimuat saat dipakai)
+  function fontOptions(cur) {
+    const opt = (f) => `<option value="${esc(f)}"${f === cur ? " selected" : ""}>${esc(f)}</option>`;
+    const extra = window.SNEFonts && SNEFonts.names ? SNEFonts.names.filter((n) => !FONTS.some((x) => x[0] === n)) : [];
+    const known = FONTS.some((x) => x[0] === cur) || extra.includes(cur);
+    return (known ? "" : opt(cur)) + `<optgroup label="Populer (${FONTS.length})">${FONTS.map(([f]) => opt(f)).join("")}</optgroup>` +
+      (extra.length ? `<optgroup label="Pustaka Studio (${extra.length})">${extra.map(opt).join("")}</optgroup>` : "");
+  }
   const fontLoads = new Map();
   function loadFont(name) {
     if (fontLoads.has(name)) return fontLoads.get(name);
     const def = FONTS.find((f) => f[0] === name);
+    if (!def && window.SNEFonts && SNEFonts.has && SNEFonts.has(name)) {
+      SNEFonts.ensure(name);
+      const p = new Promise((resolve) => {
+        const done = () => { window.removeEventListener("sne-fonts", done); document.fonts.load(`400 40px "${name}"`).catch(() => {}).then(() => { requestRender(); resolve(); }); };
+        window.addEventListener("sne-fonts", done);
+        setTimeout(done, 4000);
+      });
+      fontLoads.set(name, p);
+      return p;
+    }
     const fam = encodeURIComponent(name).replace(/%20/g, "+");
     const link = document.createElement("link");
     link.rel = "stylesheet";
@@ -236,6 +255,46 @@
   // ======================================================================
   // 3. MEDIA: impor, thumbnail, gelombang suara, elemen pemutar per klip
   // ======================================================================
+  // Gambar kecil hitam/kosong = frame belum benar-benar tergambar saat diambil
+  function isBlankCanvas(c) {
+    const s = document.createElement("canvas");
+    s.width = 16; s.height = 16;
+    const x = s.getContext("2d", { willReadFrequently: true });
+    x.drawImage(c, 0, 0, 16, 16);
+    const d = x.getImageData(0, 0, 16, 16).data;
+    let lo = 255, hi = 0;
+    for (let i = 0; i < d.length; i += 4) { const l = (d[i] + d[i + 1] + d[i + 2]) / 3; lo = Math.min(lo, l); hi = Math.max(hi, l); }
+    return hi < 6 || (hi - lo < 2 && hi < 20);
+  }
+  // Tunggu frame hasil seek benar-benar siap digambar (Chrome kadang memicu "seeked" sebelum frame ter-decode)
+  function framePainted(v, ms = 500) {
+    return new Promise((r) => {
+      const to = setTimeout(r, ms);
+      if (v.requestVideoFrameCallback) v.requestVideoFrameCallback(() => { clearTimeout(to); r(); });
+    });
+  }
+  function seekTo(v, t) {
+    return new Promise((r) => { const to = setTimeout(r, 4000); v.onseeked = () => { clearTimeout(to); r(); }; v.currentTime = t; });
+  }
+  function grabThumb(v) {
+    const c = document.createElement("canvas");
+    const sc = 200 / Math.max(1, v.videoWidth);
+    c.width = Math.max(1, Math.round(v.videoWidth * sc));
+    c.height = Math.max(1, Math.round(v.videoHeight * sc));
+    try { c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); return isBlankCanvas(c) ? "" : c.toDataURL("image/jpeg", 0.75); } catch (e) { return ""; }
+  }
+  // Proyek lama bisa menyimpan thumbnail hitam (bug versi sebelumnya): buat ulang
+  async function repairThumb(m) {
+    if (m.thumb) {
+      const img = await loadImg(m.thumb).catch(() => null);
+      if (img && !isBlankCanvas(img)) return;
+    }
+    const info = await probeVideo(m.url);
+    if (!info || !info.thumb) return;
+    m.thumb = info.thumb;
+    store.saveMedia(m);
+    renderMediaBin();
+  }
   function probeVideo(url) {
     return new Promise((resolve) => {
       const v = document.createElement("video");
@@ -249,13 +308,19 @@
       setTimeout(fail, 20000);
       v.onloadedmetadata = () => {
         let dur = v.duration;
-        const finish = () => {
-          const c = document.createElement("canvas");
-          const sc = 200 / Math.max(1, v.videoWidth);
-          c.width = Math.max(1, Math.round(v.videoWidth * sc));
-          c.height = Math.max(1, Math.round(v.videoHeight * sc));
-          let thumb = "";
-          try { c.getContext("2d").drawImage(v, 0, 0, c.width, c.height); thumb = c.toDataURL("image/jpeg", 0.7); } catch (e) {}
+        const finish = async () => {
+          if (done) return;
+          v.onseeked = null;
+          await framePainted(v);
+          let thumb = grabThumb(v);
+          // masih kosong (layar hitam di awal / frame belum siap): coba titik lain
+          for (const f of [0.3, 0.5]) {
+            if (thumb || !isFinite(dur)) break;
+            await seekTo(v, dur * f);
+            await framePainted(v);
+            thumb = grabThumb(v);
+          }
+          if (done) return;
           done = true;
           resolve({ duration: dur, w: v.videoWidth, h: v.videoHeight, thumb }); // ada/tidaknya suara diketahui saat decode (computePeaks)
           v.removeAttribute("src");
@@ -288,9 +353,13 @@
       const cv = document.createElement("canvas");
       cv.width = fw * n; cv.height = STRIP_H;
       const x = cv.getContext("2d");
+      const wantThumb = !m.thumb;
       for (let i = 0; i < n; i++) {
-        await new Promise((r) => { v.onseeked = r; setTimeout(r, 3000); v.currentTime = Math.min(dur - 0.05, (i + 0.5) * step); });
+        await seekTo(v, Math.min(dur - 0.05, (i + 0.5) * step));
+        await framePainted(v, 300);
         x.drawImage(v, i * fw, 0, fw, STRIP_H);
+        // thumbnail kartu media yang gagal dibuat saat impor diambil dari bingkai pertama yang tidak kosong
+        if (wantThumb && !m.thumb) { m.thumb = grabThumb(v); if (m.thumb) renderMediaBin(); }
       }
       v.removeAttribute("src"); v.load();
       m.strip = { url: cv.toDataURL("image/jpeg", 0.6), n, fw, step };
@@ -860,6 +929,7 @@
     const m = media.get(c.mediaId);
     if (!m) return null;
     if (c.type === "image") return m.img && m.img.complete ? { src: m.img, w: m.img.naturalWidth, h: m.img.naturalHeight } : null;
+    if (fastExp && fastExp.frames.has(c.id)) return fastExp.frames.get(c.id);
     const el = clipEl(c);
     if (!el || el.readyState < 2 || !el.videoWidth) return null;
     return { src: el, w: el.videoWidth, h: el.videoHeight };
@@ -1033,7 +1103,39 @@
     if (!/^#[0-9a-f]{6}$/i.test(hex)) return hex;
     return `rgba(${parseInt(hex.slice(1, 3), 16)},${parseInt(hex.slice(3, 5), 16)},${parseInt(hex.slice(5, 7), 16)},${a})`;
   }
+  // Klip "Template teks": beberapa lapis teks gaya Studio Foto dalam satu klip. Tiap lapis punya animasi bergiliran.
+  const layerHits = new WeakMap(); // klip -> [{m: DOMMatrix, box}] dalam piksel kanvas pratinjau
+  const groupM = new WeakMap();
+  let inPreview = false;
+  const typoK = (W, H) => Math.min(W / 1080, H / 1350);
+  function drawTypoClip(ctx, c, t, W, H) {
+    if (!window.SNETypo) return;
+    const k = typoK(W, H), local = t - c.start, hits = [];
+    ctx.save();
+    ctx.translate(c.x * W, c.y * H);
+    ctx.rotate((c.rot * Math.PI) / 180);
+    ctx.scale(c.scale, c.scale);
+    ctx.translate(-W / 2, -H / 2);
+    if (inPreview) groupM.set(c, ctx.getTransform());
+    c.layers.forEach((L, i) => {
+      loadFont(L.fontFamily || "Plus Jakarta Sans");
+      const d = i * 0.09;
+      const an = c.animIn !== "none" && local < c.animInDur + d ? animState(c, Math.max(c.start, t - d)) : animState(c, t);
+      ctx.save();
+      ctx.globalAlpha = clamp(((L.opacity ?? 100) / 100) * c.opacity * an.a, 0, 1);
+      ctx.translate(L.x * W + an.dx * W, L.y * H + an.dy * H);
+      ctx.rotate(((L.rotation || 0) * Math.PI) / 180 + an.r);
+      ctx.scale(an.s, an.s);
+      if (FILTER_OK && an.blur > 0.2) ctx.filter = `blur(${(an.blur * k).toFixed(1)}px)`;
+      const box = SNETypo.drawLayer(ctx, L, k, an.chars);
+      if (inPreview) hits.push({ m: ctx.getTransform(), box });
+      ctx.restore();
+    });
+    ctx.restore();
+    if (inPreview) layerHits.set(c, hits);
+  }
   function drawText(ctx, c, t, W, H) {
+    if (c.layers) return drawTypoClip(ctx, c, t, W, H);
     if (!c.text) return;
     loadFont(c.font);
     const k = W / P.w;
@@ -1222,7 +1324,8 @@
     });
   }
   function drawPreview() {
-    renderFrame(vctx, T, canvas.width, canvas.height, { preview: true });
+    inPreview = true;
+    try { renderFrame(vctx, T, canvas.width, canvas.height, { preview: true }); } finally { inPreview = false; }
   }
   function fitCanvas() {
     const box = $("vFitBox");
@@ -1255,6 +1358,7 @@
       ctx.restore();
     }
     if (!c || c.type === "audio" || T < c.start || T >= end(c)) return;
+    if (c.layers) return drawLayerSelection(ctx, c);
     const b = boundsOf.get(c);
     if (!b) return;
     const dpr = canvas.width / canvas.clientWidth;
@@ -1275,6 +1379,45 @@
     ctx.stroke();
     ctx.restore();
   }
+  let layerSel = 0;
+  function layerHandle(c, i) {
+    const h = (layerHits.get(c) || [])[i];
+    if (!h) return null;
+    const { box, m } = h;
+    return { h: m.transformPoint(new DOMPoint(box.cx + box.w / 2, box.cy + box.h / 2)), c: m.transformPoint(new DOMPoint(box.cx, box.cy)) };
+  }
+  function drawLayerSelection(ctx, c) {
+    const hits = layerHits.get(c) || [];
+    const dpr = canvas.width / canvas.clientWidth;
+    hits.forEach(({ m, box }, i) => {
+      const sx = Math.hypot(m.a, m.b) || 1, on = i === layerSel;
+      ctx.save();
+      ctx.setTransform(m);
+      ctx.strokeStyle = on ? "#FFD24A" : "rgba(255,255,255,0.55)";
+      ctx.lineWidth = ((on ? 2 : 1) * dpr) / sx;
+      ctx.setLineDash(on ? [] : [5 * dpr / sx, 4 * dpr / sx]);
+      ctx.strokeRect(box.cx - box.w / 2, box.cy - box.h / 2, box.w, box.h);
+      ctx.restore();
+    });
+    const hd = layerHandle(c, layerSel);
+    if (hd) {
+      ctx.save();
+      ctx.fillStyle = "#FFD24A"; ctx.strokeStyle = "#000"; ctx.lineWidth = 1.5 * dpr;
+      ctx.beginPath(); ctx.arc(hd.h.x, hd.h.y, 10 * dpr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.restore();
+    }
+  }
+  // lapis template di titik (x,y) kanvas; yang digambar terakhir (paling atas) didahulukan
+  function hitLayer(c, x, y) {
+    const hits = layerHits.get(c) || [];
+    for (let i = hits.length - 1; i >= 0; i--) {
+      const { m, box } = hits[i];
+      const p = m.inverse().transformPoint(new DOMPoint(x, y));
+      const pad = 10 * (canvas.width / canvas.clientWidth) / (Math.hypot(m.a, m.b) || 1);
+      if (Math.abs(p.x - box.cx) <= box.w / 2 + pad && Math.abs(p.y - box.cy) <= box.h / 2 + pad) return i;
+    }
+    return -1;
+  }
   function canvasPt(e) {
     const r = canvas.getBoundingClientRect();
     return { x: ((e.clientX - r.left) / r.width) * canvas.width, y: ((e.clientY - r.top) / r.height) * canvas.height };
@@ -1288,6 +1431,7 @@
     for (const tr of order) { // teks paling atas dulu
       const list = P.clips.filter((c) => c.track === tr.id && T >= c.start && T < end(c));
       for (const c of list.reverse()) {
+        if (c.layers) { const li = hitLayer(c, x, y); if (li >= 0) { hitTest.layer = li; return c; } continue; }
         const b = boundsOf.get(c);
         if (!b) continue;
         const l = toLocal(b, x, y);
@@ -1303,6 +1447,19 @@
     const p = canvasPt(e);
     ptrs.set(e.pointerId, p);
     const sel = clipById(selId);
+    const selL = sel && sel.layers && sel.layers[layerSel];
+    if (ptrs.size === 2 && selL) {
+      const [a, b] = [...ptrs.values()];
+      cdrag = { mode: "lpinch", c: sel, L: selL, d0: Math.hypot(b.x - a.x, b.y - a.y), a0: Math.atan2(b.y - a.y, b.x - a.x), fs0: selL.fontSize, r0: selL.rotation || 0, moved: true };
+      return;
+    }
+    if (selL && T >= sel.start && T < end(sel)) {
+      const hd = layerHandle(sel, layerSel), dpr = canvas.width / canvas.clientWidth;
+      if (hd && Math.hypot(p.x - hd.h.x, p.y - hd.h.y) < 22 * dpr) {
+        cdrag = { mode: "lhandle", c: sel, L: selL, ctr: hd.c, d0: Math.hypot(p.x - hd.c.x, p.y - hd.c.y), a0: Math.atan2(p.y - hd.c.y, p.x - hd.c.x), fs0: selL.fontSize, r0: selL.rotation || 0, moved: false };
+        return;
+      }
+    }
     if (ptrs.size === 2 && sel && sel.type !== "audio") {
       const [a, b] = [...ptrs.values()];
       cdrag = { mode: "pinch", c: sel, d0: Math.hypot(b.x - a.x, b.y - a.y), a0: Math.atan2(b.y - a.y, b.x - a.x), s0: sel.scale, r0: sel.rot, moved: true };
@@ -1319,8 +1476,17 @@
         }
       }
     }
+    hitTest.layer = -1;
     const hit = hitTest(p.x, p.y);
-    if (hit) {
+    if (hit && hit.layers) {
+      const li = hitTest.layer;
+      if (hit.id !== selId) { selId = hit.id; layerSel = li; renderTimelineSel(); renderInspector(); }
+      else if (li !== layerSel) { layerSel = li; renderInspector(); }
+      const G = groupM.get(hit), L = hit.layers[li];
+      const lp = G ? G.inverse().transformPoint(new DOMPoint(p.x, p.y)) : p;
+      cdrag = { mode: "lmove", c: hit, L, Ginv: G ? G.inverse() : null, lp0: lp, x0: L.x, y0: L.y, px: p.x, py: p.y, moved: false };
+      requestRender();
+    } else if (hit) {
       if (hit.id !== selId) select(hit.id);
       cdrag = { mode: "move", c: hit, px: p.x, py: p.y, x0: hit.x, y0: hit.y, moved: false };
     } else {
@@ -1334,7 +1500,27 @@
     ptrs.set(e.pointerId, p);
     if (!cdrag) return;
     const c = cdrag.c;
-    if (cdrag.mode === "move") {
+    if (cdrag.mode === "lmove") {
+      if (!cdrag.moved && Math.hypot(p.x - cdrag.px, p.y - cdrag.py) < 4) return;
+      cdrag.moved = true;
+      const lp = cdrag.Ginv ? cdrag.Ginv.transformPoint(new DOMPoint(p.x, p.y)) : p;
+      let nx = cdrag.x0 + (lp.x - cdrag.lp0.x) / canvas.width, ny = cdrag.y0 + (lp.y - cdrag.lp0.y) / canvas.height;
+      guides = { x: Math.abs(nx - 0.5) < 0.012, y: Math.abs(ny - 0.5) < 0.012 };
+      if (guides.x) nx = 0.5;
+      if (guides.y) ny = 0.5;
+      cdrag.L.x = Math.round(nx * 1e4) / 1e4; cdrag.L.y = Math.round(ny * 1e4) / 1e4;
+    } else if (cdrag.mode === "lhandle") {
+      cdrag.moved = true;
+      const d = Math.hypot(p.x - cdrag.ctr.x, p.y - cdrag.ctr.y), a = Math.atan2(p.y - cdrag.ctr.y, p.x - cdrag.ctr.x);
+      cdrag.L.fontSize = Math.round(clamp(cdrag.fs0 * (d / Math.max(1, cdrag.d0)), 6, 600));
+      let r = cdrag.r0 + ((a - cdrag.a0) * 180) / Math.PI;
+      for (const sn of [-180, -90, 0, 90, 180]) if (Math.abs(r - sn) < 3) r = sn;
+      cdrag.L.rotation = Math.round(r * 10) / 10;
+    } else if (cdrag.mode === "lpinch" && ptrs.size >= 2) {
+      const [a, b] = [...ptrs.values()];
+      cdrag.L.fontSize = Math.round(clamp(cdrag.fs0 * (Math.hypot(b.x - a.x, b.y - a.y) / Math.max(1, cdrag.d0)), 6, 600));
+      cdrag.L.rotation = Math.round((cdrag.r0 + ((Math.atan2(b.y - a.y, b.x - a.x) - cdrag.a0) * 180) / Math.PI) * 10) / 10;
+    } else if (cdrag.mode === "move") {
       const dx = p.x - cdrag.px, dy = p.y - cdrag.py;
       if (!cdrag.moved && Math.hypot(dx, dy) < 4) return;
       cdrag.moved = true;
@@ -1377,7 +1563,9 @@
     const c = clipById(selId);
     if (!c || c.type === "audio") return;
     e.preventDefault();
-    c.scale = clamp(c.scale * Math.exp(-e.deltaY * 0.0015), 0.05, 12);
+    const L = c.layers && c.layers[layerSel];
+    if (L) L.fontSize = Math.round(clamp(L.fontSize * Math.exp(-e.deltaY * 0.0015), 6, 600));
+    else c.scale = clamp(c.scale * Math.exp(-e.deltaY * 0.0015), 0.05, 12);
     requestRender();
     syncInspectorValues();
     clearTimeout(canvas._wheelT);
@@ -1517,20 +1705,75 @@
       el.currentTime = time;
     });
   }
+  // Ekspor cepat: frame di-decode berurutan oleh WebCodecs (video-decode.js), bukan seek elemen <video> per frame.
+  // fastExp.readers: id klip -> Reader | null (pakai cara lama) | false (klip sudah lewat, decoder ditutup)
+  let fastExp = null;
+  function beginFastExport() {
+    endFastExport();
+    if (window.SNEDecode && window.VideoDecoder) fastExp = { readers: new Map(), frames: new Map(), stats: { fast: 0, slow: 0 } };
+    return !!fastExp;
+  }
+  function endFastExport() {
+    if (!fastExp) return null;
+    const st = fastExp.stats;
+    fastExp.readers.forEach((r) => r && r.close());
+    fastExp = null;
+    return st;
+  }
+  // Video HP potret sering disimpan mendatar + matriks rotasi: putar frame ke kanvas
+  function frameSource(f, r) {
+    const rot = r.tr.rot;
+    const w = f.displayWidth, h = f.displayHeight;
+    if (!rot) return { src: f, w, h };
+    const side = rot === 90 || rot === 270;
+    const cv = r.rotCv || (r.rotCv = document.createElement("canvas"));
+    cv.width = side ? h : w; cv.height = side ? w : h;
+    const x = cv.getContext("2d");
+    x.setTransform(1, 0, 0, 1, cv.width / 2, cv.height / 2);
+    x.rotate((rot * Math.PI) / 180);
+    x.drawImage(f, -w / 2, -h / 2);
+    return { src: cv, w: cv.width, h: cv.height };
+  }
   async function prepareFrame(t) {
-    const jobs = [];
+    const jobs = [], fx = fastExp;
+    if (fx) fx.frames.clear();
     P.clips.forEach((c) => {
       if (c.type !== "video") return;
       const [vs, ve] = visibleRange(c);
-      if (t < vs || t >= ve) return;
-      const el = clipEl(c);
-      if (!el) return;
-      if (!el.paused) el.pause();
+      if (t < vs || t >= ve) {
+        const r = fx && fx.readers.get(c.id);
+        if (r && t >= ve) { r.close(); fx.readers.set(c.id, false); }
+        return;
+      }
       const tt = srcTime(c, clamp(t, c.start, end(c) - 1e-3));
-      jobs.push((async () => {
+      const viaElement = async () => {
+        const el = clipEl(c);
+        if (!el) return;
+        if (!el.paused) el.pause();
         if (el.readyState < 1) await new Promise((r) => { el.addEventListener("loadedmetadata", r, { once: true }); setTimeout(r, 8000); });
         await seekEl(el, tt);
         if (el.readyState < 2) await new Promise((r) => { el.addEventListener("loadeddata", r, { once: true }); setTimeout(r, 3000); });
+      };
+      // klip mundur (reverse) tetap lewat elemen: decoder berurutan tidak efisien untuk mundur
+      if (!fx || c.reverse) { jobs.push(viaElement()); return; }
+      jobs.push((async () => {
+        let r = fx.readers.get(c.id);
+        if (r === undefined) {
+          const m = media.get(c.mediaId);
+          r = await SNEDecode.open(m && m.blob).catch(() => null);
+          fx.readers.set(c.id, r || null);
+        }
+        if (r) {
+          try {
+            const f = await r.frameAt(tt);
+            if (f) { fx.frames.set(c.id, frameSource(f, r)); fx.stats.fast++; return; }
+          } catch (e) {
+            console.warn("decoder cepat gagal, pakai seek elemen", e);
+            r.close(); fx.readers.set(c.id, null);
+          }
+        }
+        fx.stats.slow++;
+        await viaElement();
       })());
     });
     await Promise.all(jobs);
@@ -1540,6 +1783,7 @@
   // 8. AKSI EDIT
   // ======================================================================
   function select(id) {
+    if (id !== selId) layerSel = 0;
     selId = id;
     renderTimelineSel();
     renderInspector();
@@ -1865,6 +2109,7 @@
             media.set(m.id, m);
             if (m.kind !== "image" && !m.peaks) computePeaks(m);
             if (m.kind === "video" && !m.strip) setTimeout(() => makeStrip(m), 800);
+            if (m.kind === "video") repairThumb(m);
           }
           const pj = await tx("kv", "readonly", (s) => s.get("project"));
           return pj || null;
@@ -1902,7 +2147,7 @@
         const strip = m && m.strip && c.type === "video";
         if (m && m.thumb && c.type !== "audio" && !strip) style += `background-image:url(${m.thumb});`;
         const subWave = c.type === "video" && m && m.peaks && !c.mute && h >= 44;
-        const label = c.type === "text" ? esc(c.text.replace(/\n/g, " ")) : esc(m ? m.name : "Media hilang");
+        const label = c.type === "text" ? esc(c.layers ? `▦ ${c.tplName || "Template"} · ${(c.layers[0] || {}).text || ""}`.replace(/\n/g, " ") : c.text.replace(/\n/g, " ")) : esc(m ? m.name : "Media hilang");
         const badges = [];
         if (c.speed !== 1) badges.push(`${+c.speed.toFixed(2)}x`);
         if (c.reverse) badges.push("⟲");
@@ -2238,6 +2483,7 @@
     if (tab === "fx") renderFxGrid();
     if (tab === "trans") renderTransGrid();
     if (tab === "canvas") renderCanvasPane();
+    if (tab === "tpl") renderTemplatePane();
     document.querySelectorAll("[data-mob]").forEach((b) => b.classList.toggle("active", b.dataset.mob === tab || (b.dataset.mob === "media" && tab === "canvas")));
   }
   function setSheet(which) {
@@ -2431,6 +2677,45 @@
     importFiles(e.dataTransfer.files, { place: true });
   });
 
+  // ---------- Template teks (tipografi Studio Foto + model khusus video) ----------
+  function addTemplate(tpl) {
+    if (!tpl) return;
+    tpl.layers.forEach((l) => loadFont(l.fontFamily || "Plus Jakarta Sans"));
+    const D = projectDur();
+    const c = newClip("text", null, null, T, D && D - T > 1 ? Math.min(5, D - T) : 4, {
+      layers: JSON.parse(JSON.stringify(tpl.layers)), tplId: tpl.id, tplName: tpl.name, text: "", fit: "none", animIn: "slideU", animInDur: 0.5, animOut: "fade", animOutDur: 0.35
+    });
+    c.track = ensureTrack("text", c.start, c.dur);
+    P.clips.push(c);
+    selId = c.id;
+    layerSel = 0;
+    commit();
+    if (matchMedia("(max-width:1023px)").matches) setSheet("");
+    showToast(`Template "${tpl.name}" ditambahkan · ketuk teks di pratinjau untuk mengedit`);
+    return c;
+  }
+  let tplCat = "Semua";
+  function renderTemplatePane() {
+    if (!window.SNETypo) return;
+    const all = SNETypo.all(), cats = ["Semua", ...new Set(all.map((t) => t.cat))];
+    $("vTplCats").innerHTML = cats.map((k) => `<button type="button" class="vchip${k === tplCat ? " on" : ""}" data-tcat="${esc(k)}">${esc(k)}</button>`).join("");
+    const list = all.filter((t) => tplCat === "Semua" || t.cat === tplCat);
+    const grid = $("vTplGrid");
+    grid.innerHTML = list.map((t) => `<button type="button" class="vtpl" data-tpl="${esc(t.id)}" title="${esc(t.sub || "")}"><canvas width="108" height="192"></canvas><span>${esc(t.name)}</span></button>`).join("");
+    // gambar mini setelah font-nya siap (font dimuat sekali, dipakai ulang)
+    grid.querySelectorAll("[data-tpl]").forEach((b) => {
+      const t = all.find((x) => x.id === b.dataset.tpl);
+      const draw = () => { const cv = b.querySelector("canvas"); if (cv) cv.getContext("2d").drawImage(SNETypo.thumb(t, 216, 384), 0, 0, 108, 192); };
+      draw();
+      Promise.all(SNETypo.fontsOf(t).map(loadFont)).then(draw);
+    });
+  }
+  $("vTplCats").addEventListener("click", (e) => { const b = e.target.closest("[data-tcat]"); if (b) { tplCat = b.dataset.tcat; renderTemplatePane(); } });
+  $("vTplGrid").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tpl]");
+    if (b) addTemplate(SNETypo.all().find((t) => t.id === b.dataset.tpl));
+  });
+
   // Teks
   $("vAddText").addEventListener("click", () => addText(TEXT_STYLES[0]));
   $("vTextStyles").innerHTML = TEXT_STYLES.map((s, i) => {
@@ -2443,7 +2728,7 @@
     if (!b) return;
     const s = TEXT_STYLES[+b.dataset.style];
     const c = clipById(selId);
-    if (c && c.type === "text") { // ganti gaya teks terpilih
+    if (c && c.type === "text" && !c.layers) { // ganti gaya teks terpilih
       const fresh = newTextClip(c.start, s, c.text);
       ["font", "weight", "italic", "size", "color", "color2", "stroke", "strokeColor", "shadow", "shadowColor", "bgOn", "bgColor", "spacing", "hl"].forEach((k) => { c[k] = fresh[k]; });
       loadFont(c.font);
@@ -2636,7 +2921,7 @@
       return;
     }
     const m = media.get(c.mediaId);
-    const kindName = c.type === "text" ? "Teks" : c.type === "audio" ? "Audio" : isMain(c) ? (c.type === "video" ? "Video" : "Foto") : `Overlay ${c.type === "video" ? "Video" : "Foto"}`;
+    const kindName = c.layers ? `Template · ${c.tplName || ""}` : c.type === "text" ? "Teks" : c.type === "audio" ? "Audio" : isMain(c) ? (c.type === "video" ? "Video" : "Foto") : `Overlay ${c.type === "video" ? "Video" : "Foto"}`;
     $("vInspTitle").textContent = kindName + (m ? ` · ${m.name}` : "");
     $("vInspSub").textContent = `Mulai ${fmtT(c.start)} · durasi ${c.dur.toFixed(2)} dtk`;
     let h = "";
@@ -2647,10 +2932,11 @@
       <button type="button" class="sne-btn-danger py-2 text-[11px]" data-act="del">Hapus</button>
     </div>`;
     h += actions;
-    if (c.type === "text") {
+    if (c.layers) h += typoInspector(c);
+    if (c.type === "text" && !c.layers) {
       h += sec("Teks", `
         <textarea data-p="text" rows="3" class="sne-field w-full p-2.5 text-sm" placeholder="Ketik teks…">${esc(c.text)}</textarea>
-        <label class="vrowc"><span>Font</span><select data-p="font" data-commit class="sne-field h-9 px-2 text-xs col-span-2">${FONTS.map(([f]) => `<option value="${esc(f)}"${f === c.font ? " selected" : ""} style="font-family:'${esc(f)}'">${esc(f)}</option>`).join("")}</select></label>
+        <label class="vrowc"><span>Font</span><select data-p="font" data-commit class="sne-field h-9 px-2 text-xs col-span-2">${fontOptions(c.font)}</select></label>
         ${slider("size", "Ukuran", 16, 400, 1, "px", c)}
         <div class="vrowc"><span>Warna</span><div class="flex items-center gap-2 col-span-2"><input type="color" class="vcolor" data-p="color" value="${c.color}" /><span class="text-[11px]">Gradasi</span><input type="checkbox" data-toggle="color2" ${c.color2 ? "checked" : ""} class="accent-[#B42318]" />${c.color2 ? `<input type="color" class="vcolor" data-p="color2" value="${c.color2}" />` : ""}</div></div>
         <div class="vrowc"><span>Tebal</span><div class="col-span-2">${chips("weight", [[400, "Normal"], [700, "Tebal"], [900, "Ekstra"]], c.weight)}</div></div>
@@ -2754,10 +3040,47 @@
     tabify(box, c);
     box.scrollTop = keepScroll;
   }
+  function typoInspector(c) {
+    layerSel = clamp(layerSel, 0, c.layers.length - 1);
+    const i = layerSel, L = c.layers[i], P_ = (k) => `layers.${i}.${k}`;
+    const cs = (v) => (/^#[0-9a-f]{6}$/i.test(v || "") ? v : "#ffffff");
+    const tg = (k, label) => `<label class="flex items-center gap-2 text-xs"><input type="checkbox" data-toggle="${P_(k)}" ${L[k] ? "checked" : ""} class="accent-[#B42318] w-4 h-4" /> ${label}</label>`;
+    const list = `<div class="vchips">${c.layers.map((l, j) => `<button type="button" class="vchip${j === i ? " on" : ""}" data-act="layer" data-li="${j}" title="${esc(l.text || "")}">${esc(l.role || "Lapis " + (j + 1))}</button>`).join("")}</div>
+      <div class="grid grid-cols-3 gap-1.5"><button type="button" class="sne-btn-secondary py-1.5 text-[11px]" data-act="layerAdd">+ Lapis</button><button type="button" class="sne-btn-secondary py-1.5 text-[11px]" data-act="layerDup">Duplikat</button><button type="button" class="sne-btn-danger py-1.5 text-[11px]" data-act="layerDel"${c.layers.length < 2 ? " disabled" : ""}>Hapus Lapis</button></div>
+      <p class="text-[11px] text-[#737373]">Seret teks di pratinjau untuk memindah, tarik bulatan kuning untuk ukuran &amp; putar.</p>`;
+    let h = sec("Lapis Teks", list + `
+      <textarea data-p="${P_("text")}" rows="3" class="sne-field w-full p-2.5 text-sm" placeholder="Ketik teks…">${esc(L.text || "")}</textarea>
+      <label class="vrowc"><span>Font</span><select data-p="${P_("fontFamily")}" data-commit class="sne-field h-9 px-2 text-xs col-span-2">${fontOptions(L.fontFamily)}</select></label>
+      ${slider(P_("fontSize"), "Ukuran", 6, 400, 1, "px", c)}
+      <div class="vrowc"><span>Warna</span><div class="flex items-center gap-2 col-span-2"><input type="color" class="vcolor" data-p="${P_("color")}" value="${cs(L.color)}" /><span class="text-[11px]">Gradasi</span><input type="checkbox" data-toggle="${P_("gradientEnabled")}" ${L.gradientEnabled ? "checked" : ""} class="accent-[#B42318]" />${L.gradientEnabled ? `<input type="color" class="vcolor" data-p="${P_("color2")}" value="${cs(L.color2 || "#F97316")}" />` : ""}</div></div>
+      <div class="vrowc"><span>Tebal</span><div class="col-span-2">${chips(P_("fontWeight"), [["400", "Normal"], ["700", "Tebal"], ["800", "Ekstra"], ["900", "Hitam"]], L.fontWeight)}</div></div>
+      <div class="vrowc"><span>Gaya</span><div class="col-span-2">${chips(P_("fontStyle"), [["normal", "Tegak"], ["italic", "Miring"]], L.fontStyle || "normal")}</div></div>
+      <div class="vrowc"><span>Rata</span><div class="col-span-2">${chips(P_("align"), [["left", "Kiri"], ["center", "Tengah"], ["right", "Kanan"]], L.align || "center")}</div></div>
+      <div class="flex flex-wrap gap-x-4 gap-y-1">${tg("uppercase", "HURUF BESAR")}${tg("underline", "Garis bawah")}</div>
+      ${slider(P_("letterSpacing"), "Jarak huruf", -5, 40, 0.5, "px", c)}
+      ${slider(P_("lineHeight"), "Jarak baris", 0.6, 2.2, 0.01, "x", c)}
+      ${slider(P_("curve"), "Lengkung", -100, 100, 1, "int", c)}
+      ${slider(P_("rotation"), "Putar", -180, 180, 0.5, "deg", c)}
+      ${slider(P_("opacity"), "Kepekatan", 0, 100, 1, "int", c)}`, true, "tlayer");
+    h += sec("Efek Teks", `
+      ${slider(P_("strokeWidth"), "Garis tepi", 0, 30, 0.5, "px", c)}
+      <div class="vrowc"><span>Warna garis</span><input type="color" class="vcolor" data-p="${P_("strokeColor")}" value="${cs(L.strokeColor || "#000000")}" /></div>
+      ${slider(P_("shadowBlur"), "Bayangan/neon", 0, 80, 1, "px", c)}
+      <div class="vrowc"><span>Warna bayangan</span><input type="color" class="vcolor" data-p="${P_("shadowColor")}" value="${cs(L.shadowColor || "#000000")}" /></div>
+      ${slider(P_("extrudeDepth"), "3D extrude", 0, 40, 1, "px", c)}
+      <div class="vrowc"><span>Warna 3D</span><input type="color" class="vcolor" data-p="${P_("extrudeColor")}" value="${cs(L.extrudeColor || "#1E1B4B")}" /></div>
+      <div class="text-[11px] font-semibold text-[#525252]">Dekor</div>${chips(P_("decor"), [["none", "Tanpa"], ["sparkles", "Bintang"], ["sunburst", "Matahari"], ["brackets", "Kurung"]], L.decor || "none")}
+      ${tg("bgPill", "Latar pill")}
+      ${L.bgPill ? `${chips(P_("bgPillStyle"), [["solid", "Solid"], ["outline", "Garis"], ["frosted", "Kaca"], ["locpin", "Pin lokasi"]], L.bgPillStyle || "solid")}
+        <div class="vrowc"><span>Warna pill</span><input type="color" class="vcolor" data-p="${P_("bgPillColor")}" value="${cs(L.bgPillColor || "#FFFFFF")}" /></div>
+        ${slider(P_("bgPillPad"), "Jarak tepi", 0, 40, 1, "px", c)}
+        ${slider(P_("bgPillRadius"), "Sudut", 0, 60, 1, "px", c)}` : ""}`, true, "teffect");
+    return h;
+  }
   let inspTab = "";
   function tabify(box, c) {
-    const base = c.type === "text" ? "Posisi" : c.type === "image" ? "Foto" : "Video";
-    const MAP = { teks: "Teks", garis: "Teks", latar: "Teks", karaoke: "Teks", dasar: base, chroma: base, audio: "Audio", speed: "Kecepatan", anim: "Animasi", trans: "Animasi", adj: "Warna", look: "Warna", dur: "Durasi" };
+    const base = c.type === "text" ? (c.layers ? "Grup" : "Posisi") : c.type === "image" ? "Foto" : "Video";
+    const MAP = { tlayer: "Teks", teffect: "Efek", teks: "Teks", garis: "Teks", latar: "Teks", karaoke: "Teks", dasar: base, chroma: base, audio: "Audio", speed: "Kecepatan", anim: "Animasi", trans: "Animasi", adj: "Warna", look: "Warna", dur: "Durasi" };
     const secs = [...box.querySelectorAll("details.vsec[data-sec]")];
     const groups = [];
     secs.forEach((d) => { const g = MAP[d.dataset.sec] || "Lainnya"; d.dataset.tab = g; if (!groups.includes(g)) groups.push(g); });
@@ -2815,7 +3138,8 @@
     if (p.startsWith("chroma.") && !c.chroma) c.chroma = { on: true, color: "#00FF00", tol: 40, soft: 20 };
     if (p === "dur") { c.dur = Math.max(MIN_DUR, v); normalize(); renderTimeline(); }
     else setPath(c, p, v);
-    if (p === "font") loadFont(v);
+    if (p === "font" || p.endsWith(".fontFamily")) loadFont(v);
+    if (c.layers && /^layers\.0\.text$/.test(p)) renderTimeline();
     const o = t.parentElement.querySelector("output");
     if (o && t.dataset.f) o.textContent = FMT[t.dataset.f](v);
     if (p === "text") { const lbl = rows.querySelector(`[data-clip="${c.id}"] .lbl`); if (lbl) lbl.textContent = v.replace(/\n/g, " "); }
@@ -2835,7 +3159,7 @@
         c.chroma = c.chroma || { on: false, color: "#00FF00", tol: 40, soft: 20 };
         c.chroma.on = t.checked;
         if (t.checked) autoKeyColor(c);
-      } else c[k] = t.checked;
+      } else setPath(c, k, t.checked);
       commit();
       return;
     }
@@ -2860,6 +3184,21 @@
     }
     if (b.dataset.flip) { c[b.dataset.flip] = !c[b.dataset.flip]; commit(); return; }
     switch (b.dataset.act) {
+      case "layer": layerSel = +b.dataset.li; renderInspector(); return requestRender();
+      case "layerAdd": case "layerDup": {
+        const src = b.dataset.act === "layerDup" ? c.layers[layerSel] : Object.assign({}, SNETypo.layerDefaults, SNETypo.BLANK.layers[0], { text: "Teks baru", fontSize: 60, role: "" });
+        const nl2 = JSON.parse(JSON.stringify(src));
+        nl2.y = clamp((src.y || 0.5) + 0.06, 0.04, 0.96);
+        nl2.role = (src.role || "Lapis") + (b.dataset.act === "layerDup" ? " (salinan)" : " " + (c.layers.length + 1));
+        c.layers.push(nl2);
+        layerSel = c.layers.length - 1;
+        return commit();
+      }
+      case "layerDel":
+        if (c.layers.length < 2) return;
+        c.layers.splice(layerSel, 1);
+        layerSel = Math.max(0, layerSel - 1);
+        return commit();
       case "split": return doSplit();
       case "dup": return doDuplicate();
       case "del": return doDelete();
@@ -2987,9 +3326,9 @@
 
   window.SNEVideo = {
     get project() { return P; },
-    media, duration: projectDur, renderFrame, prepareFrame, renderAudio, pause, play, setT, showToast,
-    startRealtime, stopRealtime, audioCtx: () => audioCtx(), masterNode: () => master,
-    addCaptions, setAspect, fontsReady: () => Promise.all(P.clips.filter((c) => c.type === "text").map((c) => loadFont(c.font))).then(() => document.fonts && document.fonts.ready), TEXT_STYLES, ASPECTS, mainClips, select, commit,
+    media, duration: projectDur, renderFrame, prepareFrame, beginFastExport, endFastExport, renderAudio, pause, play, setT, showToast,
+    startRealtime, stopRealtime, addTemplate, get layerSel() { return layerSel; }, audioCtx: () => audioCtx(), masterNode: () => master,
+    addCaptions, setAspect, fontsReady: () => Promise.all(P.clips.filter((c) => c.type === "text").flatMap((c) => (c.layers ? c.layers.map((l) => l.fontFamily) : [c.font])).map((f) => loadFont(f))).then(() => document.fonts && document.fonts.ready), TEXT_STYLES, ASPECTS, mainClips, select, commit,
     get time() { return T; }, get playing() { return playing; }, get selected() { return clipById(selId); },
     FILTER_OK
   };

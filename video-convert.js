@@ -114,7 +114,7 @@
         "-map", "0:v:0", "-map", "0:a:0?",
         // maksimal 1080p (sisi panjang 1920) agar cepat & hemat memori; rotasi iPhone diterapkan otomatis
         "-vf", "scale=w='min(1920,iw)':h='min(1920,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2",
-        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-pix_fmt", "yuv420p",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "18", "-g", "30", "-pix_fmt", "yuv420p",
         "-c:a", "aac", "-b:a", "192k", "-ac", "2",
         "-movflags", "+faststart", "/out.mp4"
       ]);

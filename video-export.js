@@ -61,7 +61,8 @@
     if (!window.VideoEncoder) return null;
     const lvl = avcLevel(W, H, fps);
     for (const prof of ["6400", "4D00", "4200"]) {
-      for (const hw of ["no-preference", "prefer-software"]) {
+      // encoder perangkat keras (GPU) dicoba dulu: jauh lebih cepat
+      for (const hw of ["prefer-hardware", "no-preference", "prefer-software"]) {
         const cfg = { codec: `avc1.${prof}${lvl}`, width: W, height: H, bitrate, framerate: fps, bitrateMode: "variable", latencyMode: "quality", hardwareAcceleration: hw, avc: { format: "avc" } };
         try {
           const r = await VideoEncoder.isConfigSupported(cfg);
@@ -70,6 +71,14 @@
       }
     }
     return null;
+  }
+  // gambar kecil hasil ekspor (poster + daftar file)
+  function snapThumb(src) {
+    const w = 240, h = Math.round((240 * src.height) / src.width);
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    c.getContext("2d").drawImage(src, 0, 0, w, h);
+    try { return c.toDataURL("image/jpeg", 0.75); } catch (e) { return ""; }
   }
   async function pickAudioConfig() {
     if (!window.AudioEncoder) return null;
@@ -117,20 +126,28 @@
     const N = Math.max(1, Math.round((b - a) * fps));
     const t0 = performance.now();
     ui.stage(`Merender ${N} frame (${W}×${H}, ${fps} fps)…`);
-    for (let i = 0; i < N; i++) {
-      if (signal.aborted) throw new DOMException("Dibatalkan", "AbortError");
-      if (err) throw err;
-      const t = a + i / fps;
-      await V().prepareFrame(t);
-      V().renderFrame(ctx, t, W, H);
-      const frame = new VideoFrame(cv, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
-      venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
-      frame.close();
-      while (venc.encodeQueueSize > 4) await sleep(3);
-      if (i % 3 === 0) {
-        const el = (performance.now() - t0) / 1000, rate = (i + 1) / el;
-        ui.progress((i + 1) / N * 0.94, `Frame ${i + 1}/${N} · ${rate.toFixed(1)} frame/dtk · sisa ±${Math.max(0, Math.round((N - i - 1) / rate))} dtk`);
+    const fast = V().beginFastExport ? V().beginFastExport() : false;
+    const thumbAt = Math.min(N - 1, Math.round(fps * 0.6));
+    let thumb = "", st = null;
+    try {
+      for (let i = 0; i < N; i++) {
+        if (signal.aborted) throw new DOMException("Dibatalkan", "AbortError");
+        if (err) throw err;
+        const t = a + i / fps;
+        await V().prepareFrame(t);
+        V().renderFrame(ctx, t, W, H);
+        if (i === thumbAt) thumb = snapThumb(cv);
+        const frame = new VideoFrame(cv, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
+        venc.encode(frame, { keyFrame: i % (fps * 2) === 0 });
+        frame.close();
+        while (venc.encodeQueueSize > 6) await sleep(2);
+        if (i % 3 === 0) {
+          const el = (performance.now() - t0) / 1000, rate = (i + 1) / el;
+          ui.progress((i + 1) / N * 0.94, `Frame ${i + 1}/${N} · ${rate.toFixed(1)} frame/dtk · sisa ±${Math.max(0, Math.round((N - i - 1) / rate))} dtk`);
+        }
       }
+    } finally {
+      if (fast) st = V().endFastExport();
     }
     await venc.flush();
     venc.close();
@@ -158,7 +175,9 @@
     if (err) throw err;
     ui.progress(0.98, "Menyusun file MP4…");
     muxer.finalize();
-    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4", method: "WebCodecs H.264" + (audio ? " + AAC" : " (tanpa suara)") };
+    const gpu = vcfg.hardwareAcceleration === "prefer-hardware" ? " GPU" : "";
+    const dec = st && st.fast ? " · decode cepat" : "";
+    return { blob: new Blob([muxer.target.buffer], { type: "video/mp4" }), ext: "mp4", thumb, method: "WebCodecs H.264" + gpu + (audio ? " + AAC" : " (tanpa suara)") + dec };
   }
 
   // ---------- cadangan: rekam real-time ----------
@@ -176,6 +195,8 @@
     cv.style.cssText = "position:fixed;left:0;top:0;width:2px;height:2px;opacity:0.01;pointer-events:none";
     document.body.appendChild(cv);
     const ctx = cv.getContext("2d", { alpha: false });
+    V().renderFrame(ctx, Math.min(b, a + 0.6), W, H);
+    const thumb = snapThumb(cv);
     const stream = cv.captureStream(fps);
     const ac = V().audioCtx(), master = V().masterNode();
     let dest = null;
@@ -206,7 +227,7 @@
     cv.remove();
     if (signal.aborted) throw new DOMException("Dibatalkan", "AbortError");
     const type = mime.split(";")[0];
-    return { blob: new Blob(chunks, { type }), ext: type === "video/mp4" ? "mp4" : "webm", method: "Perekaman real-time (" + type + ")" };
+    return { blob: new Blob(chunks, { type }), thumb, ext: type === "video/mp4" ? "mp4" : "webm", method: "Perekaman real-time (" + type + ")" };
   }
 
   async function exportRange(a, b, cfg, ui, signal) {
@@ -311,10 +332,12 @@
   function done(secs) {
     show("vExpDone");
     const vid = $("vExpVideo");
+    vid.poster = results[0].thumb || "";
     vid.src = results[0].url;
     const canShare = navigator.canShare && results.every((r) => navigator.canShare({ files: [new File([r.blob], r.name, { type: r.blob.type })] }));
     $("vExpFiles").innerHTML = `<div class="text-[11.5px] text-[#525252]">Selesai dalam ${Math.round(secs)} dtk · ${results[0].method}</div>` + results.map((r, i) => `
       <div class="flex items-center gap-2 sne-panel-low p-2.5">
+        ${r.thumb ? `<img src="${r.thumb}" alt="" class="vexp-thumb">` : ""}
         <div class="min-w-0 flex-1"><div class="text-xs font-bold truncate">${r.name}</div><div class="text-[11px] text-[#737373]">${(r.blob.size / 1e6).toFixed(1)} MB</div></div>
         ${results.length > 1 ? `<button type="button" class="sne-btn-secondary px-2.5 py-1.5 text-[11px]" data-preview="${i}">Lihat</button>` : ""}
         <a class="sne-btn-primary px-3 py-1.5 text-[11px]" href="${r.url}" download="${r.name}">Unduh</a>
@@ -353,7 +376,7 @@
   $("vExpAgain").addEventListener("click", () => { show("vExpSetup"); applyPreset(preset); });
   $("vExpFiles").addEventListener("click", async (e) => {
     const pv = e.target.closest("[data-preview]");
-    if (pv) { $("vExpVideo").src = results[+pv.dataset.preview].url; return; }
+    if (pv) { const r = results[+pv.dataset.preview]; $("vExpVideo").poster = r.thumb || ""; $("vExpVideo").src = r.url; return; }
     const sh = e.target.closest("[data-share]");
     if (!sh) return;
     const r = results[+sh.dataset.share];

@@ -39,7 +39,7 @@
         if (!document.fonts) return;
         Promise.all(batch.flatMap((n) => [document.fonts.load(`400 24px "${n}"`), document.fonts.load(`700 24px "${n}"`)]))
           .catch(() => {})
-          .then(() => { if (typeof renderCanvas === "function") renderCanvas(); });
+          .then(() => { if (typeof renderCanvas === "function") renderCanvas(); window.dispatchEvent(new Event("sne-fonts")); });
       };
       document.head.appendChild(link);
     }
@@ -54,5 +54,6 @@
     timer = setTimeout(flush, 40);
   }
 
-  window.SNEFonts = { ensure, total };
+  // names/has dipakai Editor Video untuk pustaka font yang sama
+  window.SNEFonts = { ensure, total, names: [...spec.keys()], has: (n) => spec.has(n) };
 })();
