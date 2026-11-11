@@ -1,0 +1,479 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>SNE Video — Editor Video</title>
+  <meta name="description" content="Editor video SNE Studio: potong, gabung, teks, subtitle otomatis, filter, transisi, dan ekspor MP4 untuk Reels, Story, TikTok, dan Status WhatsApp." />
+  <script src="https://cdn.tailwindcss.com/3.4.17"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      color-scheme: light;
+      --primary: #B42318;
+      --primary-hover: #9F1F16;
+      --primary-pressed: #8C1B14;
+      --primary-light: #FBEAE8;
+      --secondary: #177245;
+      --bg: #F3F3F0;
+      --surface: #FFFFFF;
+      --surface-low: #F7F7F5;
+      --surface-mid: #F3F3F0;
+      --surface-high: #ECECE9;
+      --ink: #171717;
+      --ink-secondary: #525252;
+      --ink-muted: #737373;
+      --border: #E7E7E4;
+      --border-control: #D2D2CE;
+      --border-strong: #A8A8A3;
+      --stage: #1C1C1B;
+      --tl-bg: #FAFAF8;
+      --clip-main: #2F6FDB;
+      --clip-overlay: #7C4DDB;
+      --clip-text: #C2410C;
+      --clip-audio: #177245;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Plus Jakarta Sans', Arial, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      margin: 0;
+      overflow: hidden;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .tabular-nums { font-variant-numeric: tabular-nums; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #D2D2CE; border-radius: 999px; }
+
+    .sne-btn-primary { background: var(--primary); color: #fff; font-weight: 600; border-radius: 12px; border: 1px solid var(--primary); transition: background-color .15s, transform .1s; }
+    .sne-btn-primary:hover { background: var(--primary-hover); }
+    .sne-btn-primary:active { background: var(--primary-pressed); transform: translateY(1px); }
+    .sne-btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+    .sne-btn-secondary { background: var(--surface); color: var(--ink); font-weight: 600; border-radius: 12px; border: 1px solid var(--border-control); transition: background-color .15s, border-color .15s; }
+    .sne-btn-secondary:hover { background: var(--surface-low); border-color: var(--border-strong); }
+    .sne-btn-secondary.on, .sne-btn-secondary[aria-pressed="true"] { background: var(--primary-light); border-color: var(--primary); color: var(--primary); }
+    .sne-btn-secondary:disabled { opacity: .45; cursor: not-allowed; }
+    .sne-btn-danger { background: var(--surface); color: var(--primary); font-weight: 600; border-radius: 12px; border: 1px solid var(--primary); }
+    .sne-btn-danger:hover { background: var(--primary-light); }
+    .sne-field { background: var(--surface); color: var(--ink); border: 1.5px solid var(--border-strong); border-radius: 12px; font-size: 14px; }
+    .sne-field:focus { outline: none; border-color: var(--primary); }
+    .sne-segmented { background: var(--surface-mid); border-radius: 999px; padding: 4px; border: 1px solid var(--border); }
+    .sne-seg-item { border-radius: 999px; color: var(--ink-secondary); font-weight: 600; transition: background-color .15s, color .15s; }
+    .sne-seg-item:hover { color: var(--ink); }
+    .sne-seg-item.active { background: var(--primary); color: #fff; }
+    .sne-card { background: var(--surface); border: 1px solid var(--border); border-radius: 18px; }
+    .sne-panel-low { background: var(--surface-low); border: 1px solid var(--border); border-radius: 14px; }
+
+    input[type="range"] { -webkit-appearance: none; appearance: none; height: 22px; background: transparent; width: 100%; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--border-control); }
+    input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 18px; height: 18px; border-radius: 999px; background: #fff; border: 2px solid var(--primary); margin-top: -7px; box-shadow: 0 1px 3px rgb(0 0 0 / .2); }
+    input[type="range"]::-moz-range-track { height: 4px; border-radius: 999px; background: var(--border-control); }
+    input[type="range"]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 999px; background: #fff; border: 2px solid var(--primary); }
+
+    /* ---------- Kerangka halaman: setinggi layar, tiap area menggulung sendiri ---------- */
+    .vshell { height: 100vh; height: 100dvh; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto; }
+    .vshell > *, .vmain > * { min-width: 0; }
+    .vmain { display: grid; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+    @media (min-width: 1024px) {
+      .vshell { grid-template-rows: 56px minmax(0, 1fr) clamp(190px, 30vh, 300px); }
+      .vmain { grid-template-columns: 300px minmax(0, 1fr) 320px; }
+      .vmobnav { display: none !important; }
+    }
+    @media (min-width: 1280px) { .vmain { grid-template-columns: 340px minmax(0, 1fr) 350px; } }
+
+    .vpanel { background: var(--surface); min-height: 0; display: flex; flex-direction: column; }
+    .vpanel-scroll { overflow-y: auto; min-height: 0; flex: 1; }
+    .vtab { font-size: 12px; font-weight: 600; color: var(--ink-secondary); padding: 8px 10px; border-radius: 10px; white-space: nowrap; }
+    .vtab:hover { background: var(--surface-low); color: var(--ink); }
+    .vtab.active { background: var(--primary-light); color: var(--primary); }
+
+    .vstage { background: var(--stage); min-height: 0; display: flex; flex-direction: column; }
+    #vFitBox { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; position: relative; }
+    #vCanvas { background: #000; border-radius: 6px; touch-action: none; box-shadow: 0 10px 40px rgb(0 0 0 / .45); display: block; }
+    .vtransport { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #151514; color: #EDEDEB; overflow-x: auto; scrollbar-width: none; }
+    .vtransport::-webkit-scrollbar { display: none; }
+    .vtbtn { height: 34px; min-width: 34px; padding: 0 9px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 600; color: #EDEDEB; flex-shrink: 0; }
+    .vtbtn:hover { background: rgb(255 255 255 / .1); }
+    .vtbtn:disabled { opacity: .35; }
+    .vtbtn.on { background: rgb(180 35 24 / .9); color: #fff; }
+    .vtbtn svg { width: 18px; height: 18px; }
+    .vplay { background: #fff; color: #111; width: 40px; height: 40px; border-radius: 999px; }
+    .vplay:hover { background: #f1f1ef; }
+
+    /* ---------- Timeline ---------- */
+    .vtl-wrap { background: var(--tl-bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
+    .vtl-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--ink-muted); }
+    #vTl { position: relative; flex: 1; min-height: 0; overflow: auto; touch-action: none; overscroll-behavior: contain; }
+    #vTlInner { position: relative; min-height: 100%; }
+    #vRuler { position: sticky; top: 0; left: 0; display: block; height: 24px; z-index: 6; background: var(--tl-bg); cursor: pointer; }
+    .vrow { position: relative; border-bottom: 1px dashed #E3E3DF; }
+    .vrow.main { background: rgb(47 111 219 / .04); }
+    .vrow.drop { background: rgb(180 35 24 / .07); }
+    .vclip { position: absolute; top: 4px; bottom: 4px; border-radius: 8px; overflow: hidden; color: #fff; font-size: 10.5px; font-weight: 700; cursor: grab; user-select: none; -webkit-user-select: none; border: 2px solid transparent; background-color: var(--clip-main); background-repeat: repeat-x; background-size: auto 100%; }
+    .vclip.k-overlay { background-color: var(--clip-overlay); }
+    .vclip.k-text { background-color: var(--clip-text); }
+    .vclip.k-audio { background-color: var(--clip-audio); background-repeat: no-repeat; }
+    .vclip.sel { border-color: #FFD24A; box-shadow: 0 0 0 1px #000 inset; z-index: 3; }
+    .vclip.drag { opacity: .85; z-index: 5; cursor: grabbing; }
+    .vclip .lbl { position: absolute; left: 6px; right: 6px; top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgb(0 0 0 / .7); pointer-events: none; }
+    .vclip .badge { position: absolute; left: 6px; bottom: 2px; font-size: 9.5px; padding: 0 4px; border-radius: 4px; background: rgb(0 0 0 / .45); pointer-events: none; }
+    .vclip .hl, .vclip .hr { position: absolute; top: 0; bottom: 0; width: 14px; display: none; align-items: center; justify-content: center; background: #FFD24A; cursor: ew-resize; touch-action: none; }
+    .vclip .hl { left: 0; border-radius: 5px 0 0 5px; }
+    .vclip .hr { right: 0; border-radius: 0 5px 5px 0; }
+    .vclip .hl::after, .vclip .hr::after { content: ""; width: 2px; height: 40%; background: #4a3a00; border-radius: 2px; }
+    .vclip.sel .hl, .vclip.sel .hr { display: flex; }
+    .vtrans { position: absolute; top: 50%; width: 20px; height: 20px; margin: -10px 0 0 -10px; border-radius: 6px; background: #fff; border: 1.5px solid var(--border-strong); z-index: 4; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+    .vtrans.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .vtrans svg { width: 12px; height: 12px; }
+    #vPlayhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--primary); z-index: 7; pointer-events: none; }
+    #vPlayhead::before { content: ""; position: absolute; top: 0; left: -6px; border: 7px solid transparent; border-top: 9px solid var(--primary); }
+    .vmarker { position: absolute; top: 0; width: 2px; height: 24px; background: #F59E0B; z-index: 6; pointer-events: none; }
+    .vsnapline { position: absolute; top: 0; bottom: 0; width: 1px; background: #F59E0B; z-index: 8; pointer-events: none; display: none; }
+
+    /* ---------- Grid aset ---------- */
+    .vmedia { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 1; background: var(--surface-high) center/cover no-repeat; border: 1px solid var(--border); }
+    .vmedia .dur { position: absolute; right: 5px; bottom: 5px; font-size: 10px; font-weight: 700; color: #fff; background: rgb(0 0 0 / .55); padding: 1px 5px; border-radius: 6px; }
+    .vmedia .kind { position: absolute; left: 5px; top: 5px; font-size: 9.5px; font-weight: 700; color: #fff; background: rgb(0 0 0 / .5); padding: 1px 5px; border-radius: 6px; text-transform: uppercase; }
+    .vmedia .acts { position: absolute; inset: auto 0 0 0; display: flex; gap: 4px; padding: 5px; background: linear-gradient(transparent, rgb(0 0 0 / .65)); }
+    .vmedia .acts button { flex: 1; font-size: 10px; font-weight: 700; color: #fff; background: rgb(255 255 255 / .18); border-radius: 7px; padding: 4px 0; backdrop-filter: blur(4px); }
+    .vmedia .acts button:hover { background: var(--primary); }
+    .vgrid-btn { border-radius: 12px; border: 1px solid var(--border); background: var(--surface); padding: 8px 6px; font-size: 11px; font-weight: 600; color: var(--ink-secondary); text-align: center; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+    .vgrid-btn:hover { border-color: var(--border-strong); color: var(--ink); }
+    .vgrid-btn.on { border-color: var(--primary); background: var(--primary-light); color: var(--primary); }
+    .vgrid-btn canvas, .vgrid-btn .sw { width: 100%; aspect-ratio: 1; border-radius: 8px; background: var(--surface-high); display: block; object-fit: cover; }
+    .vpro { font-size: 9px; font-weight: 800; color: #fff; background: linear-gradient(90deg, #B42318, #E8590C); border-radius: 5px; padding: 1px 4px; letter-spacing: .02em; }
+
+    /* ---------- Inspector ---------- */
+    .vsec { border-bottom: 1px solid var(--border); }
+    .vsec > summary { list-style: none; cursor: pointer; padding: 11px 14px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
+    .vsec > summary::-webkit-details-marker { display: none; }
+    .vsec > summary::after { content: "▾"; color: var(--ink-muted); font-size: 11px; transition: transform .15s; }
+    .vsec:not([open]) > summary::after { transform: rotate(-90deg); }
+    .vsec .body { padding: 0 14px 12px; display: grid; gap: 8px; }
+    .vrowc { display: grid; grid-template-columns: 92px minmax(0, 1fr) 46px; align-items: center; gap: 8px; font-size: 11.5px; color: var(--ink-secondary); }
+    .vrowc output { text-align: right; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; font-size: 11px; }
+    .vchips { display: flex; flex-wrap: wrap; gap: 5px; }
+    .vchip { font-size: 11px; font-weight: 600; padding: 5px 9px; border-radius: 999px; border: 1px solid var(--border-control); background: var(--surface); color: var(--ink-secondary); }
+    .vchip:hover { border-color: var(--border-strong); color: var(--ink); }
+    .vchip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+    .vcolor { width: 30px; height: 30px; border-radius: 9px; border: 1px solid var(--border-control); padding: 0; background: none; cursor: pointer; }
+    .vswatch { width: 26px; height: 26px; border-radius: 8px; border: 1px solid rgb(0 0 0 / .15); }
+    .vswatch.on { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+    /* ---------- HP: pratinjau di atas, timeline di bawah, panel jadi lembar bawah ---------- */
+    @media (max-width: 1023px) {
+      .vshell { grid-template-rows: auto minmax(0, 1fr) clamp(150px, 30dvh, 250px) auto; }
+      #vLeft, #vRight { position: fixed; left: 0; right: 0; bottom: calc(58px + env(safe-area-inset-bottom)); height: min(58dvh, 520px); z-index: 40; border-radius: 18px 18px 0 0; box-shadow: 0 -10px 40px rgb(0 0 0 / .25); transform: translateY(110%); transition: transform .22s ease; }
+      body[data-sheet="left"] #vLeft, body[data-sheet="right"] #vRight { transform: none; }
+      #vFitBox { padding: 8px; }
+      .vtl-bar .hide-sm { display: none; }
+    }
+    .vmobnav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--surface); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 45; position: relative; }
+    .vmobnav button { height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; font-weight: 600; color: var(--ink-muted); }
+    .vmobnav button.active { color: var(--primary); }
+    .vmobnav svg { width: 20px; height: 20px; }
+
+    #vToast { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%) translateY(20px); opacity: 0; pointer-events: none; transition: all .2s; z-index: 80; background: #171717; color: #fff; font-size: 12.5px; font-weight: 600; padding: 9px 14px; border-radius: 12px; max-width: min(92vw, 520px); text-align: center; }
+    #vToast.show { opacity: 1; transform: translateX(-50%); }
+    .vmodal { position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / .5); display: flex; align-items: center; justify-content: center; padding: 14px; }
+    .vmodal.hidden { display: none; }
+    .vpreset { border: 1.5px solid var(--border); border-radius: 14px; padding: 10px; text-align: left; background: var(--surface); }
+    .vpreset:hover { border-color: var(--border-strong); }
+    .vpreset.on { border-color: var(--primary); background: var(--primary-light); }
+    .vprog { height: 8px; border-radius: 999px; background: var(--surface-high); overflow: hidden; }
+    .vprog > div { height: 100%; width: 0; background: var(--primary); transition: width .2s; }
+    .vdrop { position: fixed; inset: 0; z-index: 90; background: rgb(180 35 24 / .12); border: 3px dashed var(--primary); display: none; align-items: center; justify-content: center; font-weight: 800; color: var(--primary); font-size: 18px; pointer-events: none; }
+    body.dragging .vdrop { display: flex; }
+  </style>
+</head>
+<body>
+  <div class="vshell">
+    <!-- ================= HEADER ================= -->
+    <header class="bg-white border-b border-[#E7E7E4] px-2 sm:px-4 py-2 lg:py-0 flex items-center justify-between gap-2 z-30">
+      <div class="flex items-center gap-2 min-w-0">
+        <a href="/" class="sne-btn-secondary h-9 px-2.5 text-xs flex items-center gap-1.5 shrink-0" title="Kembali ke Studio Foto">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg>
+          <span class="hidden sm:inline">Studio Foto</span>
+        </a>
+        <div class="w-9 h-9 rounded-full hidden sm:flex items-center justify-center font-extrabold text-xs shrink-0" style="background: var(--primary-light); color: var(--primary);">SNE</div>
+        <div class="min-w-0 hidden md:block">
+          <div class="font-extrabold text-sm leading-tight">SNE Video</div>
+          <div id="vProjInfo" class="text-[11px] text-[#737373] truncate">Proyek tersimpan otomatis di perangkat ini</div>
+        </div>
+        <div class="flex items-center gap-1 ml-1">
+          <button id="vUndo" type="button" class="sne-btn-secondary h-9 w-9 flex items-center justify-center" title="Urungkan (Ctrl+Z)" aria-label="Urungkan">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+          </button>
+          <button id="vRedo" type="button" class="sne-btn-secondary h-9 w-9 flex items-center justify-center" title="Ulangi (Ctrl+Y)" aria-label="Ulangi">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 14 5-5-5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <select id="vAspect" class="sne-field h-9 px-2 text-xs font-semibold cursor-pointer w-[78px] sm:w-auto" aria-label="Rasio kanvas">
+          <option value="9:16">9:16 Reels/Story/TikTok</option>
+          <option value="4:5">4:5 Post IG</option>
+          <option value="1:1">1:1 Persegi</option>
+          <option value="3:4">3:4 Portrait</option>
+          <option value="16:9">16:9 YouTube</option>
+        </select>
+        <button id="vNewProject" type="button" class="sne-btn-secondary h-9 px-2.5 text-xs hidden sm:block" title="Mulai proyek kosong">Baru</button>
+        <button id="vOpenExport" type="button" class="sne-btn-primary h-9 px-3 text-xs flex items-center gap-1.5">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4-4 4m0 0-4-4m4 4V4"/></svg>
+          Ekspor
+        </button>
+      </div>
+    </header>
+
+    <!-- ================= MAIN: panel kiri | pratinjau | inspector ================= -->
+    <main class="vmain">
+      <!-- Panel kiri: aset & alat -->
+      <aside id="vLeft" class="vpanel lg:border-r border-[#E7E7E4]">
+        <div class="flex items-center justify-between gap-1 px-2 pt-2 pb-1.5 border-b border-[#E7E7E4]">
+          <nav id="vTabs" class="flex gap-0.5 overflow-x-auto" role="tablist" style="scrollbar-width:none">
+            <button type="button" class="vtab active" data-vtab="media">Media</button>
+            <button type="button" class="vtab" data-vtab="text">Teks</button>
+            <button type="button" class="vtab" data-vtab="audio">Audio</button>
+            <button type="button" class="vtab" data-vtab="fx">Efek</button>
+            <button type="button" class="vtab" data-vtab="filter">Filter</button>
+            <button type="button" class="vtab" data-vtab="trans">Transisi</button>
+            <button type="button" class="vtab" data-vtab="canvas">Kanvas</button>
+          </nav>
+          <button type="button" class="lg:hidden sne-btn-secondary h-8 w-8 shrink-0" data-close-sheet aria-label="Tutup">✕</button>
+        </div>
+        <div class="vpanel-scroll p-3" id="vLeftBody">
+          <!-- MEDIA -->
+          <section data-vpane="media" class="space-y-3">
+            <button type="button" id="vImportBtn" class="sne-btn-primary w-full py-3 text-xs flex items-center justify-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
+              Impor Video, Foto &amp; Audio
+            </button>
+            <p class="text-[11px] text-[#737373] leading-relaxed">MP4, MOV, WebM, foto (termasuk HEIC iPhone), MP3/M4A/WAV. Bisa juga seret file ke sini. Ketuk aset untuk menaruhnya di posisi playhead.</p>
+            <div id="vMediaGrid" class="grid grid-cols-2 xl:grid-cols-3 gap-2"></div>
+            <div id="vMediaEmpty" class="sne-panel-low p-4 text-center text-xs text-[#737373]">Belum ada media. Impor video atau foto untuk mulai.</div>
+          </section>
+
+          <!-- TEKS -->
+          <section data-vpane="text" class="space-y-3 hidden">
+            <button type="button" id="vAddText" class="sne-btn-primary w-full py-2.5 text-xs">+ Tambah Teks</button>
+            <div class="sne-panel-low p-3 space-y-2">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold">Teks Otomatis (Subtitle) <span class="vpro">PRO</span></span>
+              </div>
+              <p class="text-[11px] text-[#737373] leading-relaxed">Suara di video diubah jadi subtitle bertimestamp. Diproses di perangkat ini; pertama kali mengunduh model ±80 MB.</p>
+              <div class="grid grid-cols-2 gap-1.5">
+                <select id="vCapLang" class="sne-field h-9 px-2 text-xs">
+                  <option value="indonesian">Bahasa Indonesia</option>
+                  <option value="english">English</option>
+                  <option value="malay">Melayu</option>
+                  <option value="javanese">Jawa</option>
+                  <option value="arabic">Arab</option>
+                  <option value="korean">Korea</option>
+                  <option value="japanese">Jepang</option>
+                </select>
+                <select id="vCapModel" class="sne-field h-9 px-2 text-xs">
+                  <option value="base">Akurat (base)</option>
+                  <option value="tiny">Cepat (tiny)</option>
+                </select>
+              </div>
+              <button type="button" id="vAutoCaption" class="sne-btn-secondary w-full py-2 text-xs">Buat Subtitle Otomatis</button>
+              <div id="vCapStatus" class="text-[11px] text-[#525252] hidden"></div>
+            </div>
+            <div>
+              <div class="text-xs font-bold mb-2">Gaya Teks</div>
+              <div id="vTextStyles" class="grid grid-cols-2 gap-2"></div>
+            </div>
+            <div>
+              <div class="text-xs font-bold mb-2">Stiker Emoji</div>
+              <div id="vEmojiGrid" class="grid grid-cols-6 gap-1 text-2xl"></div>
+            </div>
+          </section>
+
+          <!-- AUDIO -->
+          <section data-vpane="audio" class="space-y-3 hidden">
+            <button type="button" id="vImportAudio" class="sne-btn-primary w-full py-2.5 text-xs">+ Impor Musik / Audio</button>
+            <button type="button" id="vRecordVoice" class="sne-btn-secondary w-full py-2.5 text-xs flex items-center justify-center gap-2">
+              <span id="vRecDot" class="w-2.5 h-2.5 rounded-full bg-[#B42318]"></span><span id="vRecLabel">Rekam Sulih Suara</span>
+            </button>
+            <button type="button" id="vExtractAudio" class="sne-btn-secondary w-full py-2.5 text-xs">Pisahkan Audio dari Video Terpilih</button>
+            <button type="button" id="vAddBeat" class="sne-btn-secondary w-full py-2.5 text-xs">Tandai Ketukan di Playhead (M)</button>
+            <button type="button" id="vAutoBeat" class="sne-btn-secondary w-full py-2.5 text-xs">Deteksi Ketukan Otomatis dari Audio Terpilih <span class="vpro">PRO</span></button>
+            <p class="text-[11px] text-[#737373] leading-relaxed">Klip menempel otomatis ke penanda ketukan saat digeser. Volume, fade, kecepatan, efek suara, dan pengurang bising ada di panel kanan setelah klip audio dipilih.</p>
+          </section>
+
+          <!-- EFEK -->
+          <section data-vpane="fx" class="space-y-2 hidden">
+            <p class="text-[11px] text-[#737373]">Pilih klip video/foto di timeline, lalu ketuk efek.</p>
+            <div id="vFxGrid" class="grid grid-cols-3 gap-2"></div>
+          </section>
+
+          <!-- FILTER -->
+          <section data-vpane="filter" class="space-y-2 hidden">
+            <p class="text-[11px] text-[#737373]">Pilih klip video/foto, lalu ketuk filter. Atur intensitasnya di panel kanan.</p>
+            <div id="vLookGrid" class="grid grid-cols-3 gap-2"></div>
+          </section>
+
+          <!-- TRANSISI -->
+          <section data-vpane="trans" class="space-y-2 hidden">
+            <p class="text-[11px] text-[#737373]">Transisi dipasang di awal klip utama yang dipilih (sambungan dengan klip sebelumnya). Atau ketuk ikon kecil di antara dua klip di timeline.</p>
+            <div id="vTransGrid" class="grid grid-cols-3 gap-2"></div>
+            <button type="button" id="vTransAll" class="sne-btn-secondary w-full py-2 text-xs">Terapkan ke Semua Sambungan</button>
+          </section>
+
+          <!-- KANVAS -->
+          <section data-vpane="canvas" class="space-y-3 hidden">
+            <div>
+              <div class="text-xs font-bold mb-2">Rasio</div>
+              <div id="vAspectChips" class="vchips"></div>
+            </div>
+            <div>
+              <div class="text-xs font-bold mb-2">Latar Kanvas (untuk foto/video yang tidak memenuhi layar)</div>
+              <div id="vBgChips" class="vchips mb-2"></div>
+              <div id="vBgSwatches" class="flex flex-wrap gap-1.5 items-center"></div>
+            </div>
+            <button type="button" id="vFitAllCover" class="sne-btn-secondary w-full py-2 text-xs">Penuhi Layar untuk Semua Klip Utama</button>
+            <button type="button" id="vFitAllContain" class="sne-btn-secondary w-full py-2 text-xs">Tampilkan Utuh (dengan Latar) untuk Semua</button>
+          </section>
+        </div>
+      </aside>
+
+      <!-- Pratinjau -->
+      <section class="vstage">
+        <div id="vFitBox"><canvas id="vCanvas" width="540" height="960" aria-label="Pratinjau video"></canvas></div>
+        <div class="vtransport">
+          <button type="button" class="vtbtn" id="vToStart" title="Ke awal (Home)" aria-label="Ke awal"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L18 5.5v13z"/></svg></button>
+          <button type="button" class="vtbtn" id="vStepBack" title="Mundur 1 frame (←)" aria-label="Mundur 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg></button>
+          <button type="button" class="vtbtn vplay" id="vPlay" title="Putar / Jeda (Spasi)" aria-label="Putar"><svg id="vPlayIcon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+          <button type="button" class="vtbtn" id="vStepFwd" title="Maju 1 frame (→)" aria-label="Maju 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg></button>
+          <span id="vTime" class="text-[12px] font-semibold tabular-nums px-1 whitespace-nowrap">00:00.0 / 00:00.0</span>
+          <span class="flex-1"></span>
+          <button type="button" class="vtbtn" id="vSplit" title="Potong di playhead (S)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path stroke-linecap="round" d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg><span class="hidden sm:inline">Potong</span></button>
+          <button type="button" class="vtbtn" id="vDup" title="Duplikat (Ctrl+D)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+          <button type="button" class="vtbtn" id="vFreeze" title="Bekukan frame (jadikan foto 3 dtk)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19"/></svg></button>
+          <button type="button" class="vtbtn" id="vDelete" title="Hapus (Delete)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+          <button type="button" class="vtbtn" id="vFullscreen" title="Layar penuh"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+        </div>
+      </section>
+
+      <!-- Inspector kanan -->
+      <aside id="vRight" class="vpanel lg:border-l border-[#E7E7E4]">
+        <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-[#E7E7E4]">
+          <div class="min-w-0">
+            <div id="vInspTitle" class="text-sm font-bold truncate">Properti Klip</div>
+            <div id="vInspSub" class="text-[11px] text-[#737373] truncate">Pilih klip di timeline atau di pratinjau</div>
+          </div>
+          <button type="button" class="lg:hidden sne-btn-secondary h-8 w-8 shrink-0" data-close-sheet aria-label="Tutup">✕</button>
+        </div>
+        <div id="vInspector" class="vpanel-scroll"></div>
+      </aside>
+    </main>
+
+    <!-- ================= TIMELINE ================= -->
+    <section class="vtl-wrap">
+      <div class="vtl-bar">
+        <button type="button" id="vSnap" class="sne-btn-secondary h-7 px-2 text-[11px] on" aria-pressed="true" title="Klip menempel ke playhead, klip lain, dan ketukan">Magnet</button>
+        <button type="button" id="vAddMarker" class="sne-btn-secondary h-7 px-2 text-[11px] hide-sm" title="Tandai ketukan (M)">+ Ketukan</button>
+        <span class="flex-1 truncate hide-sm" id="vTlHint">Seret klip untuk memindah, tarik tepi kuning untuk memangkas. Di HP: tahan klip untuk memindah.</span>
+        <span class="flex-1 lg:hidden"></span>
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6"/></svg>
+        <input type="range" id="vZoom" min="0" max="100" value="45" class="w-24 sm:w-32" aria-label="Zoom timeline" />
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6M11 8v6"/></svg>
+      </div>
+      <div id="vTl">
+        <canvas id="vRuler" height="24"></canvas>
+        <div id="vTlInner">
+          <div id="vRows"></div>
+          <div id="vPlayhead"></div>
+          <div id="vSnapLine" class="vsnapline"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= NAV HP ================= -->
+    <nav class="vmobnav" id="vMobNav">
+      <button type="button" data-mob="media"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m10 9 5 3-5 3z"/></svg>Media</button>
+      <button type="button" data-mob="text"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 6h14M12 6v13"/></svg>Teks</button>
+      <button type="button" data-mob="audio"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg>Audio</button>
+      <button type="button" data-mob="fx"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg>Efek</button>
+      <button type="button" data-mob="trans"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4h7v16H4zM13 4l7 8-7 8"/></svg>Transisi</button>
+      <button type="button" data-mob="edit"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg>Edit</button>
+    </nav>
+  </div>
+
+  <!-- ================= MODAL EKSPOR ================= -->
+  <div id="vExportModal" class="vmodal hidden" role="dialog" aria-modal="true" aria-labelledby="vExpTitle">
+    <div class="sne-card w-full max-w-lg max-h-[92dvh] overflow-y-auto p-4 sm:p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 id="vExpTitle" class="text-base font-extrabold">Ekspor Video</h2>
+        <button type="button" id="vExpClose" class="sne-btn-secondary h-8 w-8" aria-label="Tutup">✕</button>
+      </div>
+      <div id="vExpSetup" class="space-y-4">
+        <div>
+          <div class="text-xs font-bold mb-2">Tujuan</div>
+          <div id="vPresetGrid" class="grid grid-cols-2 gap-2"></div>
+        </div>
+        <div id="vExpAspectWarn" class="hidden sne-panel-low p-3 text-xs text-[#525252] flex items-center justify-between gap-2"></div>
+        <div class="grid grid-cols-3 gap-2">
+          <label class="text-[11px] font-semibold text-[#525252] space-y-1 block">Resolusi
+            <select id="vExpRes" class="sne-field w-full h-9 px-2 text-xs">
+              <option value="720">720p</option>
+              <option value="1080" selected>1080p Full HD</option>
+              <option value="1440">2K</option>
+              <option value="2160">4K</option>
+            </select>
+          </label>
+          <label class="text-[11px] font-semibold text-[#525252] space-y-1 block">Frame/dtk
+            <select id="vExpFps" class="sne-field w-full h-9 px-2 text-xs">
+              <option value="24">24</option>
+              <option value="25">25</option>
+              <option value="30" selected>30</option>
+              <option value="50">50</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+          <label class="text-[11px] font-semibold text-[#525252] space-y-1 block">Kualitas
+            <select id="vExpQuality" class="sne-field w-full h-9 px-2 text-xs">
+              <option value="0.7">Hemat</option>
+              <option value="1" selected>Tinggi</option>
+              <option value="1.5">Maksimal</option>
+            </select>
+          </label>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-[#525252]">
+          <input type="checkbox" id="vExpSplit" class="w-4 h-4 accent-[#B42318]" />
+          <span id="vExpSplitLabel">Potong otomatis per 60 detik (batas Status WhatsApp)</span>
+        </label>
+        <div id="vExpInfo" class="sne-panel-low p-3 text-[11.5px] text-[#525252] leading-relaxed"></div>
+        <button type="button" id="vExpStart" class="sne-btn-primary w-full py-3 text-sm">Mulai Ekspor</button>
+      </div>
+      <div id="vExpRun" class="space-y-3 hidden">
+        <div id="vExpStage" class="text-sm font-semibold">Menyiapkan…</div>
+        <div class="vprog"><div id="vExpBar"></div></div>
+        <div id="vExpDetail" class="text-[11.5px] text-[#737373]"></div>
+        <button type="button" id="vExpCancel" class="sne-btn-secondary w-full py-2.5 text-xs">Batalkan</button>
+      </div>
+      <div id="vExpDone" class="space-y-3 hidden">
+        <video id="vExpVideo" class="w-full max-h-[46dvh] rounded-xl bg-black" controls playsinline></video>
+        <div id="vExpFiles" class="space-y-2"></div>
+        <button type="button" id="vExpAgain" class="sne-btn-secondary w-full py-2.5 text-xs">Ekspor Lagi dengan Setelan Lain</button>
+      </div>
+    </div>
+  </div>
+
+  <input type="file" id="vFileMedia" class="hidden" multiple accept="video/*,image/*,audio/*,.heic,.heif,.mov,.m4v,.mkv,.m4a,.mp3,.wav,.aac,.ogg,.opus,.flac" />
+  <input type="file" id="vFileAudio" class="hidden" multiple accept="audio/*,video/*,.m4a,.mp3,.wav,.aac,.ogg,.opus,.flac" />
+  <div class="vdrop">Lepas file untuk mengimpor</div>
+  <div id="vToast" role="status" aria-live="polite"></div>
+
+  <script src="photo-import.js"></script>
+  <script src="video-editor.js"></script>
+  <script src="video-export.js"></script>
+  <script src="video-captions.js"></script>
+</body>
+</html>

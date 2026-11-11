@@ -187,6 +187,10 @@
     inp.accept = "image/*,.heic,.heif,.avif,.tif,.tiff,.dng,.bmp";
   });
 
+  window.SNEImport = { fileToDataURL, importFiles, MAX_EDGE, IS_SMALL_DEVICE };
+  // Halaman lain (mis. video.html) hanya memakai konverter di atas, tanpa slot kolase
+  if (!document.getElementById("studioCanvas")) return;
+
   // Seret & lepas foto dari komputer: di atas kanvas -> slot di bawah kursor, selain itu -> slot aktif
   window.addEventListener("dragover", (e) => {
     if (e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files")) e.preventDefault();
@@ -211,6 +215,4 @@
     e.preventDefault();
     importFiles(files, state.selectedSlotIndex || 0);
   });
-
-  window.SNEImport = { fileToDataURL, importFiles, MAX_EDGE, IS_SMALL_DEVICE };
 })();

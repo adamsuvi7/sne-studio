@@ -1,6 +1,6 @@
 # SNE Studio — Studio Tipografi & Kolase Instastory (Siap Deploy ke Vercel)
 
-Paket ini berisi seluruh kode produksi **SNE Studio** yang sudah mandiri (*self-contained* beserta seluruh 24 aset template, 670 font (152 kurasi + 518 dimuat saat dipakai), penghapus background ala Canva, dan penajam HD) sehingga siap di-deploy ke **Vercel** dalam hitungan detik tanpa memerlukan proses kompilasi tambahan.
+Paket ini berisi seluruh kode produksi **SNE Studio** yang sudah mandiri (*self-contained* beserta seluruh 24 aset template, 670 font (152 kurasi + 518 dimuat saat dipakai), penghapus background ala Canva, dan penajam HD) plus **Editor Video** di `/video` (potong, gabung, kecepatan, mundur, teks & subtitle otomatis, filter, efek, transisi, chroma key, efek suara, ekspor MP4 1080p–4K untuk TikTok/Reels/Story/Post/Status WhatsApp) sehingga siap di-deploy ke **Vercel** dalam hitungan detik tanpa memerlukan proses kompilasi tambahan.
 
 ## Cara Cepat Deploy ke Vercel (Pilih Salah Satu)
 

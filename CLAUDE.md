@@ -22,6 +22,8 @@ Dokumen ini dibaca otomatis oleh **Claude Code** agar pengembangan lanjutan berj
 
    * Edit foto non-destruktif disimpan di `slot.adj` / `pip.adj` (termasuk putar/balik); renderer memakai `SNEFx.imageFor(slot)`, jangan menggambar `slot.img` langsung. Saat panel Edit Foto aktif foto memakai pratinjau ringan; export memasang `SNEFx.fullRes = true`.
 
+   * **Editor Video** = halaman terpisah `video.html` (URL `/video`, tombol "Video" di header Studio Foto). Tidak memakai `index.html`/`assets-data.js`. Modul: `video-editor.js` (`SNEVideo` — proyek `P` {tracks, clips, markers}, `renderFrame(ctx,t,W,H)` satu frame, pratinjau = elemen `<video>/<audio>` per klip yang disinkronkan, `renderAudio()` mixdown offline, timeline DOM, inspector, simpan otomatis IndexedDB `sne-video`), `video-export.js` (`SNEExport` — WebCodecs H.264+AAC frame demi frame + mp4-muxer; cadangan MediaRecorder real-time; preset TikTok/Reels/Story/Post/Status WA), `video-captions.js` (`SNECaptions` — Whisper transformers.js di Web Worker). `photo-import.js` juga dimuat di sana hanya untuk konversi HEIC (drag/drop/paste kolase dilewati bila `#studioCanvas` tidak ada). Trek utama magnetis (`normalize()` merapatkan klip); transisi tersimpan di klip kanan (`trans`, `transDur`).
+
    * **Tata letak**: `body.app-shell` setinggi layar (tanpa scroll halaman), `main` grid 3 kolom lebar tetap di `lg+`. Ukuran kanvas dihitung `fitCanvasToStage()` dari `#canvasFitBox` — jangan pakai `max-height` berbasis `vh`. Panel kanan punya 2 pane (`showInspectorPane("text" | "photo")`). Di bawah 1024px tampilan diatur `body[data-mob-view]` lewat `setMobileView("left" | "center" | "right" | "photo")`; `right`/`photo` menampilkan panel kanan sebagai lembar bawah di atas kanvas.
 
 4. **Deployment Vercel**:
