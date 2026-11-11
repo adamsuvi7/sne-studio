@@ -89,15 +89,25 @@
 
     .vpanel { background: var(--surface); min-height: 0; display: flex; flex-direction: column; }
     .vpanel-scroll { overflow-y: auto; min-height: 0; flex: 1; }
-    .vtab { font-size: 12px; font-weight: 600; color: var(--ink-secondary); padding: 8px 10px; border-radius: 10px; white-space: nowrap; }
+    .vtabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(44px, 1fr); flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; gap: 2px; }
+    .vtabs::-webkit-scrollbar { display: none; }
+    .vtab { display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; color: var(--ink-secondary); padding: 7px 2px 6px; border-radius: 10px; white-space: nowrap; }
+    .vtab svg { width: 21px; height: 21px; }
     .vtab:hover { background: var(--surface-low); color: var(--ink); }
     .vtab.active { background: var(--primary-light); color: var(--primary); }
 
     .vstage { background: var(--stage); min-height: 0; display: flex; flex-direction: column; }
     #vFitBox { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px; position: relative; }
     #vCanvas { background: #000; border-radius: 6px; touch-action: none; box-shadow: 0 10px 40px rgb(0 0 0 / .45); display: block; }
-    .vtransport { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: #151514; color: #EDEDEB; overflow-x: auto; scrollbar-width: none; }
-    .vtransport::-webkit-scrollbar { display: none; }
+    .vstage-head { display: flex; align-items: center; justify-content: space-between; padding: 7px 12px; font-size: 11.5px; font-weight: 700; color: #BDBDB8; border-bottom: 1px solid rgb(255 255 255 / .06); }
+    .vstage-head #vStageInfo { font-weight: 600; color: #8A8A85; }
+    .vtransport { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px; padding: 6px 10px; background: #151514; color: #EDEDEB; }
+    .vt-left { font-size: 12px; color: #A3A39E; min-width: 0; overflow: hidden; }
+    .vt-left b { color: #FFD24A; font-weight: 700; }
+    .vt-center { display: flex; align-items: center; gap: 4px; }
+    .vt-right { display: flex; align-items: center; justify-content: flex-end; gap: 4px; min-width: 0; }
+    .vsel-dark { height: 30px; max-width: 100%; background: #262624; color: #EDEDEB; border: 1px solid #3A3A37; border-radius: 9px; font-size: 11.5px; font-weight: 600; padding: 0 6px; cursor: pointer; min-width: 0; }
+    .vsel-dark:focus { outline: none; border-color: var(--primary); }
     .vtbtn { height: 34px; min-width: 34px; padding: 0 9px; border-radius: 10px; display: inline-flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 600; color: #EDEDEB; flex-shrink: 0; }
     .vtbtn:hover { background: rgb(255 255 255 / .1); }
     .vtbtn:disabled { opacity: .35; }
@@ -108,7 +118,27 @@
 
     /* ---------- Timeline ---------- */
     .vtl-wrap { background: var(--tl-bg); border-top: 1px solid var(--border); display: flex; flex-direction: column; min-height: 0; }
-    .vtl-bar { display: flex; align-items: center; gap: 8px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--ink-muted); }
+    .vtl-bar { display: flex; align-items: center; gap: 2px; padding: 4px 8px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--ink-secondary); background: var(--surface); overflow-x: auto; scrollbar-width: none; }
+    .vtl-bar::-webkit-scrollbar { display: none; }
+    .vtool { height: 32px; min-width: 32px; padding: 0 6px; border-radius: 9px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-secondary); flex-shrink: 0; }
+    .vtool svg { width: 18px; height: 18px; }
+    .vtool:hover { background: var(--surface-mid); color: var(--ink); }
+    .vtool:disabled { opacity: .35; cursor: not-allowed; }
+    .vtool.on, .vtool[aria-pressed="true"] { color: var(--primary); background: var(--primary-light); }
+    .vtool.rec { color: #fff; background: var(--primary); }
+    #vZoom { width: 120px; flex: 0 0 auto; }
+    .vsep { width: 1px; height: 18px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
+    .vtl-body { flex: 1; min-height: 0; display: flex; }
+    #vTlHeads { width: 78px; flex-shrink: 0; border-right: 1px solid var(--border); background: var(--surface); position: relative; overflow: hidden; }
+    .vth-top { height: 24px; border-bottom: 1px solid var(--border); }
+    .vth { display: flex; align-items: center; justify-content: center; gap: 1px; border-bottom: 1px dashed #E3E3DF; }
+    .vth button { width: 24px; height: 24px; border-radius: 7px; display: inline-flex; align-items: center; justify-content: center; color: var(--ink-muted); }
+    .vth button:hover { background: var(--surface-mid); color: var(--ink); }
+    .vth button.off { color: var(--primary); background: var(--primary-light); }
+    .vth svg { width: 15px; height: 15px; }
+    .vth.main { background: rgb(47 111 219 / .04); }
+    .vrow.t-hidden .vclip { opacity: .35; }
+    .vrow.t-locked .vclip { cursor: not-allowed; background-image: repeating-linear-gradient(135deg, rgb(0 0 0 / .18) 0 6px, transparent 6px 12px) !important; }
     #vTl { position: relative; flex: 1; min-height: 0; overflow: auto; touch-action: none; overscroll-behavior: contain; }
     #vTlInner { position: relative; min-height: 100%; }
     #vRuler { position: sticky; top: 0; left: 0; display: block; height: 24px; z-index: 6; background: var(--tl-bg); cursor: pointer; }
@@ -121,6 +151,9 @@
     .vclip.k-audio { background-color: var(--clip-audio); background-repeat: no-repeat; }
     .vclip.sel { border-color: #FFD24A; box-shadow: 0 0 0 1px #000 inset; z-index: 3; }
     .vclip.drag { opacity: .85; z-index: 5; cursor: grabbing; }
+    .vclip .strip { position: absolute; inset: 0; display: flex; pointer-events: none; overflow: hidden; }
+    .vclip .strip i { flex: 0 0 auto; height: 100%; background-repeat: no-repeat; border-right: 1px solid rgb(0 0 0 / .25); }
+    .vclip .wave.sub { top: auto !important; bottom: 0 !important; height: 15px !important; background: rgb(0 0 0 / .45); }
     .vclip .lbl { position: absolute; left: 6px; right: 6px; top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px rgb(0 0 0 / .7); pointer-events: none; }
     .vclip .badge { position: absolute; left: 6px; bottom: 2px; font-size: 9.5px; padding: 0 4px; border-radius: 4px; background: rgb(0 0 0 / .45); pointer-events: none; }
     .vclip .hl, .vclip .hr { position: absolute; top: 0; bottom: 0; width: 14px; display: none; align-items: center; justify-content: center; background: #FFD24A; cursor: ew-resize; touch-action: none; }
@@ -134,9 +167,15 @@
     #vPlayhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--primary); z-index: 7; pointer-events: none; }
     #vPlayhead::before { content: ""; position: absolute; top: 0; left: -6px; border: 7px solid transparent; border-top: 9px solid var(--primary); }
     .vmarker { position: absolute; top: 0; width: 2px; height: 24px; background: #F59E0B; z-index: 6; pointer-events: none; }
+    .vdrophint { position: absolute; top: 0; height: 0; border-radius: 8px; border: 2px dashed var(--primary); background: rgb(180 35 24 / .1); z-index: 8; pointer-events: none; display: none; }
+    .vghost { position: fixed; z-index: 95; width: 84px; height: 60px; border-radius: 10px; background: #333 center/cover no-repeat; box-shadow: 0 10px 28px rgb(0 0 0 / .35); pointer-events: none; transform: translate(-50%, -60%) rotate(-3deg); border: 2px solid #fff; opacity: .95; }
+    .vghost span { position: absolute; left: 4px; right: 4px; bottom: 3px; font-size: 10px; font-weight: 700; color: #fff; text-shadow: 0 1px 2px #000; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    body.mdrag, body.mdrag * { cursor: grabbing !important; user-select: none; }
+    body.mdrag #vCanvas { outline: 2px dashed rgb(255 210 74 / .8); outline-offset: 3px; }
     .vsnapline { position: absolute; top: 0; bottom: 0; width: 1px; background: #F59E0B; z-index: 8; pointer-events: none; display: none; }
 
     /* ---------- Grid aset ---------- */
+    .vmedia { cursor: grab; touch-action: pan-y; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .vmedia { position: relative; border-radius: 12px; overflow: hidden; aspect-ratio: 1; background: var(--surface-high) center/cover no-repeat; border: 1px solid var(--border); }
     .vmedia .dur { position: absolute; right: 5px; bottom: 5px; font-size: 10px; font-weight: 700; color: #fff; background: rgb(0 0 0 / .55); padding: 1px 5px; border-radius: 6px; }
     .vmedia .kind { position: absolute; left: 5px; top: 5px; font-size: 9.5px; font-weight: 700; color: #fff; background: rgb(0 0 0 / .5); padding: 1px 5px; border-radius: 6px; text-transform: uppercase; }
@@ -150,6 +189,13 @@
     .vpro { font-size: 9px; font-weight: 800; color: #fff; background: linear-gradient(90deg, #B42318, #E8590C); border-radius: 5px; padding: 1px 4px; letter-spacing: .02em; }
 
     /* ---------- Inspector ---------- */
+    .vitabs { position: sticky; top: 0; z-index: 2; display: flex; gap: 2px; padding: 6px 8px 0; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; }
+    .vitabs::-webkit-scrollbar { display: none; }
+    .vitab { font-size: 12px; font-weight: 700; color: var(--ink-muted); padding: 7px 10px 8px; border-bottom: 2px solid transparent; white-space: nowrap; }
+    .vitab:hover { color: var(--ink); }
+    .vitab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .tabbed .vsec > summary { cursor: default; padding-bottom: 6px; color: var(--ink-secondary); font-size: 11.5px; text-transform: uppercase; letter-spacing: .03em; }
+    .tabbed .vsec > summary::after { display: none; }
     .vsec { border-bottom: 1px solid var(--border); }
     .vsec > summary { list-style: none; cursor: pointer; padding: 11px 14px; font-size: 12.5px; font-weight: 700; display: flex; align-items: center; justify-content: space-between; }
     .vsec > summary::-webkit-details-marker { display: none; }
@@ -173,6 +219,11 @@
       body[data-sheet="left"] #vLeft, body[data-sheet="right"] #vRight { transform: none; }
       #vFitBox { padding: 8px; }
       .vtl-bar .hide-sm { display: none; }
+      .vstage-head { display: none; }
+      #vTlHeads { width: 34px; }
+      .vth button:not(:first-child) { display: none; }
+      .vsel-dark { max-width: 96px; }
+      .vtransport { padding: 4px 8px; }
     }
     .vmobnav { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: var(--surface); border-top: 1px solid var(--border); padding-bottom: env(safe-area-inset-bottom); z-index: 45; position: relative; }
     .vmobnav button { height: 58px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; font-size: 10px; font-weight: 600; color: var(--ink-muted); }
@@ -206,23 +257,8 @@
           <div class="font-extrabold text-sm leading-tight">SNE Video</div>
           <div id="vProjInfo" class="text-[11px] text-[#737373] truncate">Proyek tersimpan otomatis di perangkat ini</div>
         </div>
-        <div class="flex items-center gap-1 ml-1">
-          <button id="vUndo" type="button" class="sne-btn-secondary h-9 w-9 flex items-center justify-center" title="Urungkan (Ctrl+Z)" aria-label="Urungkan">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
-          </button>
-          <button id="vRedo" type="button" class="sne-btn-secondary h-9 w-9 flex items-center justify-center" title="Ulangi (Ctrl+Y)" aria-label="Ulangi">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 14 5-5-5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg>
-          </button>
-        </div>
       </div>
       <div class="flex items-center gap-1.5 shrink-0">
-        <select id="vAspect" class="sne-field h-9 px-2 text-xs font-semibold cursor-pointer w-[78px] sm:w-auto" aria-label="Rasio kanvas">
-          <option value="9:16">9:16 Reels/Story/TikTok</option>
-          <option value="4:5">4:5 Post IG</option>
-          <option value="1:1">1:1 Persegi</option>
-          <option value="3:4">3:4 Portrait</option>
-          <option value="16:9">16:9 YouTube</option>
-        </select>
         <button id="vNewProject" type="button" class="sne-btn-secondary h-9 px-2.5 text-xs hidden sm:block" title="Mulai proyek kosong">Baru</button>
         <button id="vOpenExport" type="button" class="sne-btn-primary h-9 px-3 text-xs flex items-center gap-1.5">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-1m-4-4-4 4m0 0-4-4m4 4V4"/></svg>
@@ -235,15 +271,15 @@
     <main class="vmain">
       <!-- Panel kiri: aset & alat -->
       <aside id="vLeft" class="vpanel lg:border-r border-[#E7E7E4]">
-        <div class="flex items-center justify-between gap-1 px-2 pt-2 pb-1.5 border-b border-[#E7E7E4]">
-          <nav id="vTabs" class="flex gap-0.5 overflow-x-auto" role="tablist" style="scrollbar-width:none">
-            <button type="button" class="vtab active" data-vtab="media">Media</button>
-            <button type="button" class="vtab" data-vtab="text">Teks</button>
-            <button type="button" class="vtab" data-vtab="audio">Audio</button>
-            <button type="button" class="vtab" data-vtab="fx">Efek</button>
-            <button type="button" class="vtab" data-vtab="filter">Filter</button>
-            <button type="button" class="vtab" data-vtab="trans">Transisi</button>
-            <button type="button" class="vtab" data-vtab="canvas">Kanvas</button>
+        <div class="flex items-center justify-between gap-1 px-1.5 pt-1.5 pb-1 border-b border-[#E7E7E4]">
+          <nav id="vTabs" class="vtabs" role="tablist">
+            <button type="button" class="vtab active" data-vtab="media" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 15l4-4 4 4 3-3 5 5"/><circle cx="15.5" cy="9" r="1.3"/></svg><span>Media</span></button>
+            <button type="button" class="vtab" data-vtab="audio" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path d="M9 18V5l11-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="17" cy="16" r="3"/></svg><span>Audio</span></button>
+            <button type="button" class="vtab" data-vtab="text" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" d="M5 6V4h14v2M12 4v16M9 20h6"/></svg><span>Teks</span></button>
+            <button type="button" class="vtab" data-vtab="fx" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m12 3 2.2 5.8L20 11l-5.8 2.2L12 19l-2.2-5.8L4 11l5.8-2.2z"/></svg><span>Efek</span></button>
+            <button type="button" class="vtab" data-vtab="trans" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 5h7v14H3zM14 5l7 7-7 7"/></svg><span>Transisi</span></button>
+            <button type="button" class="vtab" data-vtab="filter" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><circle cx="9" cy="10" r="5"/><circle cx="15" cy="10" r="5"/><circle cx="12" cy="15" r="5"/></svg><span>Filter</span></button>
+            <button type="button" class="vtab" data-vtab="canvas" role="tab"><svg fill="none" stroke="currentColor" stroke-width="1.8" viewBox="0 0 24 24"><rect x="6" y="3" width="12" height="18" rx="2"/><path stroke-linecap="round" d="M2 8v8M22 8v8"/></svg><span>Kanvas</span></button>
           </nav>
           <button type="button" class="lg:hidden sne-btn-secondary h-8 w-8 shrink-0" data-close-sheet aria-label="Tutup">✕</button>
         </div>
@@ -254,7 +290,7 @@
               <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 5v14m-7-7h14"/></svg>
               Impor Video, Foto &amp; Audio
             </button>
-            <p class="text-[11px] text-[#737373] leading-relaxed">MP4, MOV, WebM, foto (termasuk HEIC iPhone), MP3/M4A/WAV. Bisa juga seret file ke sini. Ketuk aset untuk menaruhnya di posisi playhead.</p>
+            <p class="text-[11px] text-[#737373] leading-relaxed">MP4, MOV, WebM, foto (termasuk HEIC iPhone), MP3/M4A/WAV. Video HEVC iPhone otomatis diubah ke H.264. Seret kartu ke timeline atau pratinjau (di HP: tahan lalu seret), atau ketuk untuk menaruh di posisi playhead.</p>
             <div id="vMediaGrid" class="grid grid-cols-2 xl:grid-cols-3 gap-2"></div>
             <div id="vMediaEmpty" class="sne-panel-low p-4 text-center text-xs text-[#737373]">Belum ada media. Impor video atau foto untuk mulai.</div>
           </section>
@@ -345,19 +381,26 @@
 
       <!-- Pratinjau -->
       <section class="vstage">
+        <div class="vstage-head"><span>Pemutar</span><span id="vStageInfo" class="tabular-nums"></span></div>
         <div id="vFitBox"><canvas id="vCanvas" width="540" height="960" aria-label="Pratinjau video"></canvas></div>
         <div class="vtransport">
-          <button type="button" class="vtbtn" id="vToStart" title="Ke awal (Home)" aria-label="Ke awal"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L18 5.5v13z"/></svg></button>
-          <button type="button" class="vtbtn" id="vStepBack" title="Mundur 1 frame (←)" aria-label="Mundur 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg></button>
-          <button type="button" class="vtbtn vplay" id="vPlay" title="Putar / Jeda (Spasi)" aria-label="Putar"><svg id="vPlayIcon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
-          <button type="button" class="vtbtn" id="vStepFwd" title="Maju 1 frame (→)" aria-label="Maju 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg></button>
-          <span id="vTime" class="text-[12px] font-semibold tabular-nums px-1 whitespace-nowrap">00:00.0 / 00:00.0</span>
-          <span class="flex-1"></span>
-          <button type="button" class="vtbtn" id="vSplit" title="Potong di playhead (S)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path stroke-linecap="round" d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg><span class="hidden sm:inline">Potong</span></button>
-          <button type="button" class="vtbtn" id="vDup" title="Duplikat (Ctrl+D)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
-          <button type="button" class="vtbtn" id="vFreeze" title="Bekukan frame (jadikan foto 3 dtk)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19"/></svg></button>
-          <button type="button" class="vtbtn" id="vDelete" title="Hapus (Delete)"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
-          <button type="button" class="vtbtn" id="vFullscreen" title="Layar penuh"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+          <div class="vt-left"><span id="vTime" class="tabular-nums whitespace-nowrap"><b>00:00.0</b> / 00:00.0</span></div>
+          <div class="vt-center">
+            <button type="button" class="vtbtn" id="vToStart" title="Ke awal (Home)" aria-label="Ke awal"><svg fill="currentColor" viewBox="0 0 24 24"><path d="M6 5h2v14H6zm3.5 7L18 5.5v13z"/></svg></button>
+            <button type="button" class="vtbtn" id="vStepBack" title="Mundur 1 frame (←)" aria-label="Mundur 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 18-6-6 6-6"/></svg></button>
+            <button type="button" class="vtbtn vplay" id="vPlay" title="Putar / Jeda (Spasi)" aria-label="Putar"><svg id="vPlayIcon" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg></button>
+            <button type="button" class="vtbtn" id="vStepFwd" title="Maju 1 frame (→)" aria-label="Maju 1 frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m9 18 6-6-6-6"/></svg></button>
+          </div>
+          <div class="vt-right">
+            <select id="vAspect" class="vsel-dark" aria-label="Rasio kanvas">
+              <option value="9:16">9:16 Reels/Story/TikTok</option>
+              <option value="4:5">4:5 Post IG</option>
+              <option value="1:1">1:1 Persegi</option>
+              <option value="3:4">3:4 Portrait</option>
+              <option value="16:9">16:9 YouTube</option>
+            </select>
+            <button type="button" class="vtbtn" id="vFullscreen" title="Layar penuh" aria-label="Layar penuh"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+          </div>
         </div>
       </section>
 
@@ -377,21 +420,36 @@
     <!-- ================= TIMELINE ================= -->
     <section class="vtl-wrap">
       <div class="vtl-bar">
-        <button type="button" id="vSnap" class="sne-btn-secondary h-7 px-2 text-[11px] on" aria-pressed="true" title="Klip menempel ke playhead, klip lain, dan ketukan">Magnet</button>
-        <button type="button" id="vAddMarker" class="sne-btn-secondary h-7 px-2 text-[11px] hide-sm" title="Tandai ketukan (M)">+ Ketukan</button>
-        <span class="flex-1 truncate hide-sm" id="vTlHint">Seret klip untuk memindah, tarik tepi kuning untuk memangkas. Di HP: tahan klip untuk memindah.</span>
-        <span class="flex-1 lg:hidden"></span>
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6"/></svg>
-        <input type="range" id="vZoom" min="0" max="100" value="45" class="w-24 sm:w-32" aria-label="Zoom timeline" />
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6M11 8v6"/></svg>
+        <button type="button" class="vtool" id="vUndo" title="Urungkan (Ctrl+Z)" aria-label="Urungkan"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 14 4 9l5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg></button>
+        <button type="button" class="vtool" id="vRedo" title="Ulangi (Ctrl+Y)" aria-label="Ulangi"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="m15 14 5-5-5-5"/><path stroke-linecap="round" stroke-linejoin="round" d="M20 9H9.5a5.5 5.5 0 0 0 0 11H13"/></svg></button>
+        <span class="vsep"></span>
+        <button type="button" class="vtool" id="vSplit" title="Potong di playhead (S)" aria-label="Potong"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path stroke-linecap="round" d="M20 4 8.1 15.9M14.5 14.5 20 20M8.1 8.1 12 12"/></svg></button>
+        <button type="button" class="vtool" id="vDelLeft" title="Hapus bagian kiri playhead (Q)" aria-label="Hapus kiri"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M14 4v16"/><path stroke-linecap="round" stroke-linejoin="round" d="M4 8l6 8M10 8l-6 8"/></svg></button>
+        <button type="button" class="vtool" id="vDelRight" title="Hapus bagian kanan playhead (W)" aria-label="Hapus kanan"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M10 4v16"/><path stroke-linecap="round" stroke-linejoin="round" d="M14 8l6 8M20 8l-6 8"/></svg></button>
+        <button type="button" class="vtool" id="vDelete" title="Hapus (Delete)" aria-label="Hapus"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 7h16M10 11v6m4-6v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg></button>
+        <button type="button" class="vtool" id="vDup" title="Duplikat (Ctrl+D)" aria-label="Duplikat"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg></button>
+        <button type="button" class="vtool" id="vFreeze" title="Bekukan frame (jadikan foto 3 dtk)" aria-label="Bekukan frame"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19"/></svg></button>
+        <button type="button" class="vtool" id="vTlRecord" title="Rekam sulih suara" aria-label="Rekam sulih suara"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path stroke-linecap="round" d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <span class="flex-1"></span>
+        <button type="button" id="vSnap" class="vtool on" aria-pressed="true" title="Magnet: klip menempel ke playhead, klip lain, dan ketukan" aria-label="Magnet"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 3v8a6 6 0 0 0 12 0V3h-4v8a2 2 0 0 1-4 0V3z"/><path d="M6 7h4M14 7h4"/></svg></button>
+        <button type="button" id="vAddMarker" class="vtool hide-sm" title="Tandai ketukan (M)" aria-label="Tandai ketukan"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M6 21V4h11l-2 4 2 4H6"/></svg></button>
+        <span class="vsep hide-sm"></span>
+        <button type="button" class="vtool hide-sm" id="vZoomOut" title="Perkecil timeline" aria-label="Perkecil timeline"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6"/></svg></button>
+        <input type="range" id="vZoom" min="0" max="100" value="45" class="w-20 sm:w-28" aria-label="Zoom timeline" />
+        <button type="button" class="vtool hide-sm" id="vZoomIn" title="Perbesar timeline" aria-label="Perbesar timeline"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path stroke-linecap="round" d="m20 20-3.5-3.5M8 11h6M11 8v6"/></svg></button>
+        <button type="button" class="vtool hide-sm" id="vZoomFit" title="Muat seluruh proyek" aria-label="Muat seluruh proyek"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
       </div>
+      <div class="vtl-body">
+      <div id="vTlHeads"><div class="vth-top"></div><div id="vTlHeadsInner"></div></div>
       <div id="vTl">
         <canvas id="vRuler" height="24"></canvas>
         <div id="vTlInner">
           <div id="vRows"></div>
           <div id="vPlayhead"></div>
           <div id="vSnapLine" class="vsnapline"></div>
+          <div id="vDropHint" class="vdrophint"></div>
         </div>
+      </div>
       </div>
     </section>
 
@@ -472,6 +530,7 @@
   <div id="vToast" role="status" aria-live="polite"></div>
 
   <script src="photo-import.js"></script>
+  <script src="video-convert.js"></script>
   <script src="video-editor.js"></script>
   <script src="video-export.js"></script>
   <script src="video-captions.js"></script>

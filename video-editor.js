@@ -147,6 +147,7 @@
   const kindOfTrack = (id) => (P.tracks.find((t) => t.id === id) || {}).kind;
   const isMain = (c) => c.track === "main";
   const isVisual = (c) => c.type === "video" || c.type === "image";
+  const trackFlag = (c, k) => !!(trackOf(c) || {})[k];
   const hasSound = (c) => c.type === "audio" || (c.type === "video" && (media.get(c.mediaId) || {}).hasAudio !== false);
   const end = (c) => c.start + c.dur;
   const projectDur = () => P.clips.reduce((m, c) => Math.max(m, end(c)), 0);
@@ -272,6 +273,47 @@
     });
   }
 
+  // Filmstrip: N bingkai kecil sepanjang video digabung jadi satu gambar sprite (seperti deretan bingkai di CapCut)
+  const STRIP_H = 64;
+  function makeStrip(m) {
+    if (m.kind !== "video" || m.strip || m._stripJob) return m._stripJob;
+    m._stripJob = (async () => {
+      const v = document.createElement("video");
+      v.muted = true; v.playsInline = true; v.preload = "auto"; v.src = m.url;
+      const ok = await new Promise((r) => { v.onloadeddata = () => r(true); v.onerror = () => r(false); setTimeout(() => r(false), 15000); });
+      if (!ok || !v.videoWidth) return;
+      const dur = m.duration || v.duration;
+      const n = clamp(Math.ceil(dur / 1), 2, 40), step = dur / n;
+      const fw = Math.round(STRIP_H * v.videoWidth / v.videoHeight);
+      const cv = document.createElement("canvas");
+      cv.width = fw * n; cv.height = STRIP_H;
+      const x = cv.getContext("2d");
+      for (let i = 0; i < n; i++) {
+        await new Promise((r) => { v.onseeked = r; setTimeout(r, 3000); v.currentTime = Math.min(dur - 0.05, (i + 0.5) * step); });
+        x.drawImage(v, i * fw, 0, fw, STRIP_H);
+      }
+      v.removeAttribute("src"); v.load();
+      m.strip = { url: cv.toDataURL("image/jpeg", 0.6), n, fw, step };
+      store.saveMedia(m);
+      renderTimeline();
+    })().catch(() => {});
+    return m._stripJob;
+  }
+  // ubin bingkai untuk satu klip: tiap ubin menampilkan bingkai sumber terdekat di waktunya
+  function stripHtml(c, m, w, h) {
+    const st = m.strip;
+    const tw = Math.max(16, Math.round(st.fw * h / STRIP_H)), sc = h / STRIP_H;
+    const n = Math.min(400, Math.ceil(w / tw));
+    let o = "";
+    for (let i = 0; i < n; i++) {
+      const tl = ((i + 0.5) * tw / w) * c.dur;
+      const src = c.reverse ? c.in + (c.dur - tl) * c.speed : c.in + tl * c.speed;
+      const k = clamp(Math.floor(src / st.step), 0, st.n - 1);
+      o += `<i style="width:${tw}px;background-position:${-k * st.fw * sc}px 0"></i>`;
+    }
+    return `<div class="strip" style="--s:url(${st.url})">${o.replace(/<i style="/g, `<i style="background-image:var(--s);background-size:${st.n * st.fw * sc}px ${h}px;`)}</div>`;
+  }
+
   // AudioBuffer ter-decode per media (48 kHz) untuk ekspor, subtitle, ketukan, gelombang
   const decoded = new Map();
   function decodeMedia(id, mm) {
@@ -363,18 +405,31 @@
       m.thumb = c.toDataURL(m.alpha ? "image/png" : "image/jpeg", 0.75);
     } else if (kind === "video") {
       m.url = URL.createObjectURL(file);
-      const info = await probeVideo(m.url);
+      let info = await probeVideo(m.url);
+      if (!info && window.SNEConvert) {
+        // Gambar video tak terbaca (biasanya HEVC/H.265 .MOV iPhone di Chrome/Windows): ubah ke H.264 di perangkat.
+        // Dulu jatuh ke jalur audio sehingga yang masuk hanya suaranya.
+        const r = await SNEConvert.toH264(file);
+        if (r.blob) {
+          URL.revokeObjectURL(m.url);
+          m.blob = r.blob;
+          m.url = URL.createObjectURL(r.blob);
+          m.converted = true;
+          info = await probeVideo(m.url);
+        } else if (r.cancelled) { URL.revokeObjectURL(m.url); showToast(`Impor "${name}" dibatalkan`); return null; }
+        else if (r.error) console.warn("Konversi gagal:", r.error);
+      }
       if (!info) {
-        // Video tanpa gambar yang bisa dibaca: mungkin hanya audio (mis. .m4a bertipe video/mp4) atau HEVC yang tak didukung
+        // Benar-benar tanpa trek gambar (mis. .m4a bertipe video/mp4): impor sebagai audio
         const a = await probeAudio(m.url);
-        if (a) { m.kind = "audio"; m.duration = a; computePeaks(m); }
+        if (a) { m.kind = "audio"; m.duration = a; computePeaks(m); showToast(`"${name}" tidak punya gambar, dimasukkan sebagai audio`, 4000); }
         else {
           URL.revokeObjectURL(m.url);
-          showToast(`Video "${name}" tidak bisa diputar browser ini. Video HEVC iPhone (.MOV) bisa diputar di Safari; di Chrome ubah dulu ke H.264 / pilih "Paling Kompatibel" di Pengaturan Kamera iPhone.`, 7000);
+          showToast(`Video "${name}" tidak bisa dibuka. Coba ekspor ulang ke MP4 H.264 atau pilih "Paling Kompatibel" di Pengaturan Kamera iPhone.`, 7000);
           return null;
         }
       } else Object.assign(m, info);
-      if (m.kind === "video") computePeaks(m);
+      if (m.kind === "video") { computePeaks(m); setTimeout(() => makeStrip(m), 50); }
     } else if (kind === "audio") {
       m.url = URL.createObjectURL(file);
       const d = await probeAudio(m.url);
@@ -607,7 +662,7 @@
     const OAC = window.OfflineAudioContext || window.webkitOfflineAudioContext;
     const len = Math.max(1, Math.ceil((t1 - t0) * sr));
     const oac = new OAC(channels, len, sr);
-    const list = P.clips.filter((c) => hasSound(c) && !c.mute && c.volume > 0 && c.start < t1 && end(c) > t0);
+    const list = P.clips.filter((c) => hasSound(c) && !c.mute && !trackFlag(c, "muted") && c.volume > 0 && c.start < t1 && end(c) > t0);
     let any = false;
     for (let i = 0; i < list.length; i++) {
       const c = list[i];
@@ -1134,9 +1189,9 @@
     ctx.imageSmoothingQuality = "high";
     ctx.fillStyle = "#000";
     ctx.fillRect(0, 0, W, H);
-    drawMain(ctx, t, W, H);
+    if (!(P.tracks.find((tr) => tr.kind === "main") || {}).hidden) drawMain(ctx, t, W, H);
     // trek lain: dari bawah (dekat trek utama) ke atas
-    const order = P.tracks.slice().reverse().filter((tr) => tr.kind === "overlay" || tr.kind === "text");
+    const order = P.tracks.slice().reverse().filter((tr) => (tr.kind === "overlay" || tr.kind === "text") && !tr.hidden);
     order.forEach((tr) => {
       P.clips.forEach((c) => {
         if (c.track !== tr.id || t < c.start || t >= end(c)) return;
@@ -1225,7 +1280,7 @@
     return { x: dx * cs - dy * sn, y: dx * sn + dy * cs };
   }
   function hitTest(x, y) {
-    const order = P.tracks.filter((tr) => tr.kind !== "audio");
+    const order = P.tracks.filter((tr) => tr.kind !== "audio" && !tr.hidden && !tr.locked);
     for (const tr of order) { // teks paling atas dulu
       const list = P.clips.filter((c) => c.track === tr.id && T >= c.start && T < end(c));
       for (const c of list.reverse()) {
@@ -1347,7 +1402,7 @@
       }
       el._preT = null;
       const desired = srcTime(c, T);
-      const audible = isPlaying && hasSound(c) && !c.mute && !c.reverse && T >= c.start && T < end(c);
+      const audible = isPlaying && hasSound(c) && !c.mute && !trackFlag(c, "muted") && !c.reverse && T >= c.start && T < end(c);
       const g = isPlaying ? wireEl(el, c) : el._gain;
       if (g) g.gain.value = audible ? c.volume * fadeGain(c, T - c.start) : 0;
       else el.volume = audible ? clamp(c.volume * fadeGain(c, T - c.start), 0, 1) : 0;
@@ -1553,6 +1608,29 @@
     commit();
     showToast("Klip dipotong");
   }
+  function doTrimSide(side) {
+    let c = clipById(selId);
+    if (!c || T <= c.start || T >= end(c)) c = mainClips().find((x) => T > x.start && T < end(x));
+    if (!c) return showToast("Taruh playhead di tengah klip");
+    if (trackFlag(c, "locked")) return showToast("Trek terkunci");
+    const r = splitAt(c, T);
+    if (!r) return showToast("Terlalu dekat dengan tepi klip");
+    if (side === "left") {
+      Object.assign(r, { trans: c.trans, transDur: c.transDur, animIn: c.animIn, animInDur: c.animInDur, fadeIn: c.fadeIn });
+      if (!isMain(c)) r.start = c.start; // klip lepas: sisa kanan menempati posisi awal
+      P.clips = P.clips.filter((x) => x.id !== c.id);
+      selId = r.id;
+    } else {
+      Object.assign(c, { animOut: r.animOut, animOutDur: r.animOutDur, fadeOut: r.fadeOut });
+      P.clips = P.clips.filter((x) => x.id !== r.id);
+      selId = c.id;
+    }
+    normalize();
+    commit();
+    const k = clipById(selId);
+    if (k && side === "left") setT(k.start);
+    showToast(side === "left" ? "Bagian kiri playhead dihapus" : "Bagian kanan playhead dihapus");
+  }
   function doDelete() {
     const c = clipById(selId);
     if (!c) return showToast("Pilih klip dulu");
@@ -1681,6 +1759,7 @@
       pause();
       $("vRecLabel").textContent = "Rekam Sulih Suara";
       $("vRecDot").classList.remove("animate-pulse");
+      $("vTlRecord").classList.remove("rec");
       const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
       const n = [...media.values()].filter((m) => /^Sulih Suara/.test(m.name)).length + 1;
       const m = await importFile(new File([blob], `Sulih Suara ${n}.${/mp4/.test(blob.type) ? "m4a" : "webm"}`, { type: blob.type }), "audio");
@@ -1699,6 +1778,7 @@
     rec = mr;
     $("vRecLabel").textContent = "Berhenti Merekam";
     $("vRecDot").classList.add("animate-pulse");
+    $("vTlRecord").classList.add("rec");
     if (projectDur() > 0) play();
     showToast("Merekam… timeline diputar supaya kamu bisa menyesuaikan suara");
   }
@@ -1731,6 +1811,7 @@
     $("vUndo").disabled = hIdx <= 0;
     $("vRedo").disabled = hIdx >= history.length - 1;
     $("vAspect").value = P.aspect;
+    $("vStageInfo").textContent = `${P.w}×${P.h} · ${P.aspect}`;
     fitCanvas();
     syncMedia(playing);
     updateClock();
@@ -1759,7 +1840,7 @@
     const warn = (e) => { console.warn(e); if (!warned) { warned = true; showToast("Penyimpanan browser penuh/diblokir: proyek tidak tersimpan otomatis"); } };
     return {
       saveMedia(m) {
-        const row = { id: m.id, kind: m.kind, name: m.name, blob: m.blob, duration: m.duration, w: m.w, h: m.h, thumb: m.thumb, peaks: m.peaks || null, hasAudio: m.hasAudio, alpha: !!m.alpha };
+        const row = { id: m.id, kind: m.kind, name: m.name, blob: m.blob, duration: m.duration, w: m.w, h: m.h, thumb: m.thumb, peaks: m.peaks || null, hasAudio: m.hasAudio, alpha: !!m.alpha, strip: m.strip || null, converted: !!m.converted };
         tx("media", "readwrite", (s) => s.put(row)).catch(warn);
         if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
       },
@@ -1779,6 +1860,7 @@
             if (m.kind === "image") m.img = await loadImg(m.url);
             media.set(m.id, m);
             if (m.kind !== "image" && !m.peaks) computePeaks(m);
+            if (m.kind === "video" && !m.strip) setTimeout(() => makeStrip(m), 800);
           }
           const pj = await tx("kv", "readonly", (s) => s.get("project"));
           return pj || null;
@@ -1803,15 +1885,19 @@
   function renderTimeline() {
     const D = projectDur();
     inner.style.width = Math.max(tl.clientWidth, tx(D) + Math.max(240, tl.clientWidth * 0.6)) + "px";
-    let html = "";
+    let html = "", heads = "";
     P.tracks.forEach((tr) => {
       const h = ROW_H[tr.kind] || 44;
-      html += `<div class="vrow ${tr.kind}" data-track="${tr.id}" data-kind="${tr.kind}" style="height:${h}px">`;
+      heads += trackHead(tr, h);
+      html += `<div class="vrow ${tr.kind}${tr.hidden ? " t-hidden" : ""}${tr.locked ? " t-locked" : ""}" data-track="${tr.id}" data-kind="${tr.kind}" style="height:${h}px">`;
       P.clips.filter((c) => c.track === tr.id).forEach((c) => {
         const m = media.get(c.mediaId);
         const kind = c.type === "text" ? "text" : c.type === "audio" ? "audio" : tr.kind === "main" ? "main" : "overlay";
-        let style = `left:${tx(c.start)}px;width:${Math.max(6, c.dur * pps)}px;`;
-        if (m && m.thumb && c.type !== "audio") style += `background-image:url(${m.thumb});`;
+        const cw = Math.max(6, c.dur * pps);
+        let style = `left:${tx(c.start)}px;width:${cw}px;`;
+        const strip = m && m.strip && c.type === "video";
+        if (m && m.thumb && c.type !== "audio" && !strip) style += `background-image:url(${m.thumb});`;
+        const subWave = c.type === "video" && m && m.peaks && !c.mute && h >= 44;
         const label = c.type === "text" ? esc(c.text.replace(/\n/g, " ")) : esc(m ? m.name : "Media hilang");
         const badges = [];
         if (c.speed !== 1) badges.push(`${+c.speed.toFixed(2)}x`);
@@ -1820,7 +1906,8 @@
         if (c.look !== "none" && c.type !== "audio" && c.type !== "text") badges.push("🎨");
         if (c.fx !== "none" && c.type !== "audio" && c.type !== "text") badges.push("✨");
         html += `<div class="vclip k-${kind}${c.id === selId ? " sel" : ""}" data-clip="${c.id}" style="${style}">` +
-          (c.type === "audio" ? `<canvas class="wave" style="position:absolute;inset:0;width:100%;height:100%"></canvas>` : "") +
+          (strip ? stripHtml(c, m, cw, h - 12) : "") +
+          (c.type === "audio" || subWave ? `<canvas class="wave${subWave ? " sub" : ""}" style="position:absolute;inset:0;width:100%;height:100%"></canvas>` : "") +
           `<span class="lbl">${label}</span>${badges.length ? `<span class="badge">${badges.join(" ")} · ${c.dur.toFixed(1)}s</span>` : `<span class="badge">${c.dur.toFixed(1)}s</span>`}` +
           `<span class="hl" data-trim="l"></span><span class="hr" data-trim="r"></span></div>`;
       });
@@ -1834,6 +1921,7 @@
       html += "</div>";
     });
     rows.innerHTML = html;
+    $("vTlHeadsInner").innerHTML = heads;
     P.markers.forEach((mk) => { const d = document.createElement("div"); d.className = "vmarker"; d.style.left = tx(mk) + "px"; rows.appendChild(d); });
     rows.querySelectorAll(".vclip").forEach((el) => {
       const c = clipById(el.dataset.clip);
@@ -1845,7 +1933,7 @@
   }
   function drawWave(cv, c, el) {
     const m = media.get(c.mediaId);
-    const w = Math.min(4000, Math.max(6, Math.round(c.dur * pps))), h = (el.clientHeight || 32) - 4;
+    const w = Math.min(4000, Math.max(6, Math.round(c.dur * pps))), h = cv.classList.contains("sub") ? 15 : (el.clientHeight || 32) - 4;
     cv.width = w; cv.height = h;
     const x = cv.getContext("2d");
     if (!m || !m.peaks) return;
@@ -1858,6 +1946,30 @@
       x.fillRect(i, (h - vh) / 2 + 2, 1, vh);
     }
   }
+  const HEAD_ICONS = {
+    muted: ['<path stroke-linejoin="round" d="M4 9h4l5-4v14l-5-4H4z"/><path stroke-linecap="round" d="M16.5 9a4 4 0 0 1 0 6M19 6.5a8 8 0 0 1 0 11"/>', '<path stroke-linejoin="round" d="M4 9h4l5-4v14l-5-4H4z"/><path stroke-linecap="round" d="m17 9 5 6m0-6-5 6"/>'],
+    hidden: ['<path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>', '<path stroke-linecap="round" d="M3 3l18 18M10.6 5.1A10.6 10.6 0 0 1 12 5c6.4 0 10 7 10 7a17.6 17.6 0 0 1-3.2 4.1M6.6 6.6A17.4 17.4 0 0 0 2 12s3.6 7 10 7a9.7 9.7 0 0 0 5.4-1.6"/>'],
+    locked: ['<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.8-1.2"/>', '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>']
+  };
+  const HEAD_TIPS = { muted: ["Bisukan trek", "Nyalakan suara trek"], hidden: ["Sembunyikan trek", "Tampilkan trek"], locked: ["Kunci trek", "Buka kunci trek"] };
+  function trackHead(tr, h) {
+    const keys = tr.kind === "text" ? ["hidden", "locked"] : tr.kind === "audio" ? ["muted", "locked"] : ["muted", "hidden", "locked"];
+    return `<div class="vth ${tr.kind}" style="height:${h}px">` + keys.map((k) => {
+      const on = !!tr[k];
+      return `<button type="button" class="${on ? "off" : ""}" data-tflag="${k}" data-track="${tr.id}" title="${HEAD_TIPS[k][on ? 1 : 0]}" aria-label="${HEAD_TIPS[k][on ? 1 : 0]}" aria-pressed="${on}"><svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">${HEAD_ICONS[k][on ? 1 : 0]}</svg></button>`;
+    }).join("") + "</div>";
+  }
+  $("vTlHeadsInner").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-tflag]");
+    if (!b) return;
+    const tr = P.tracks.find((x) => x.id === b.dataset.track);
+    if (!tr) return;
+    const k = b.dataset.tflag;
+    tr[k] = !tr[k];
+    if (k === "locked" && tr[k] && selId && (clipById(selId) || {}).track === tr.id) selId = null;
+    commit();
+    showToast({ muted: ["Suara trek dinyalakan", "Trek dibisukan"], hidden: ["Trek ditampilkan", "Trek disembunyikan"], locked: ["Kunci trek dibuka", "Trek dikunci"] }[k][tr[k] ? 1 : 0]);
+  });
   function renderTimelineSel() {
     rows.querySelectorAll(".vclip").forEach((el) => el.classList.toggle("sel", el.dataset.clip === selId));
   }
@@ -1896,7 +2008,7 @@
     x.fillStyle = "#B42318";
     x.fillRect(ph - 1, 0, 2, 24);
   }
-  tl.addEventListener("scroll", drawRuler, { passive: true });
+  tl.addEventListener("scroll", () => { drawRuler(); $("vTlHeadsInner").style.transform = `translateY(${-tl.scrollTop}px)`; }, { passive: true });
   new ResizeObserver(() => renderTimeline()).observe(tl);
 
   function autoScroll() {
@@ -1904,7 +2016,7 @@
     if (px < tl.scrollLeft + 30 || px > tl.scrollLeft + tl.clientWidth - 40) tl.scrollLeft = Math.max(0, px - tl.clientWidth * 0.3);
   }
   function updateClock() {
-    $("vTime").textContent = `${fmtT(T)} / ${fmtT(projectDur())}`;
+    $("vTime").innerHTML = `<b>${fmtT(T)}</b> / ${fmtT(projectDur())}`;
     updatePlayhead();
     if (playing) autoScroll();
   }
@@ -1961,6 +2073,7 @@
     if (clipEl) {
       const c = clipById(clipEl.dataset.clip);
       if (!c) return;
+      if (trackFlag(c, "locked")) { select(c.id); td = null; return; }
       const trim = e.target.dataset.trim;
       const base = { c, el: clipEl, x0: e.clientX, y0: e.clientY, sl0: tl.scrollLeft, orig: { start: c.start, dur: c.dur, in: c.in, track: c.track }, moved: false };
       if (trim) {
@@ -2157,7 +2270,121 @@
         </div>
       </div>`).join("");
   }
+  // Seret kartu media: mouse langsung, sentuhan tahan ±0,3 dtk dulu (supaya gulir panel tetap jalan)
+  let mdrag = null, lastMDrag = 0;
+  const hint = $("vDropHint");
+  $("vMediaGrid").addEventListener("pointerdown", (e) => {
+    if (e.button > 0 || e.target.closest("button")) return;
+    const card = e.target.closest("[data-media]");
+    const m = card && media.get(card.dataset.media);
+    if (!m) return;
+    mdrag = { m, x0: e.clientX, y0: e.clientY, x: e.clientX, y: e.clientY, touch: e.pointerType !== "mouse", active: false };
+    if (mdrag.touch) mdrag.lp = setTimeout(() => { if (mdrag && !mdrag.active) startMDrag(); }, 300);
+  });
+  function startMDrag() {
+    const d = mdrag;
+    d.active = true;
+    if (navigator.vibrate) navigator.vibrate(12);
+    d.ghost = document.createElement("div");
+    d.ghost.className = "vghost";
+    if (d.m.thumb) d.ghost.style.backgroundImage = `url(${d.m.thumb})`;
+    else d.ghost.style.background = "linear-gradient(135deg,#177245,#0b3d25)";
+    d.ghost.innerHTML = `<span>${esc(d.m.name)}</span>`;
+    document.body.appendChild(d.ghost);
+    document.body.classList.add("mdrag");
+    if (matchMedia("(max-width:1023px)").matches) setSheet(""); // lembar ditutup supaya timeline terlihat
+    moveMDrag(d.x, d.y);
+  }
+  function mediaDropTarget(x, y) {
+    const m = mdrag.m;
+    const dur = m.kind === "image" ? 3 : m.duration || 3;
+    const cr = canvas.getBoundingClientRect();
+    if (m.kind !== "audio" && x >= cr.left && x <= cr.right && y >= cr.top && y <= cr.bottom) return { kind: "canvas" };
+    const r = tl.getBoundingClientRect();
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+    let t = Math.max(0, (x - r.left + tl.scrollLeft - PAD) / pps);
+    const row = rowAt(y);
+    const rk = row && row.dataset.kind;
+    if (m.kind !== "audio" && (rk === "main" || !mainClips().length)) {
+      const bounds = [0, ...mainClips().map(end)];
+      const at = bounds.reduce((a, b) => (Math.abs(b - t) < Math.abs(a - t) ? b : a), 0);
+      return { kind: "main", at, dur, row: P.tracks.find((tr) => tr.kind === "main").id };
+    }
+    t = snap(t, null).t;
+    const want = m.kind === "audio" ? "audio" : "overlay";
+    const tr = row && rk === want ? row.dataset.track : null;
+    const free = tr && !P.clips.some((c) => c.track === tr && c.start < t + dur - 1e-6 && end(c) > t + 1e-6);
+    return { kind: want, t, dur, track: free ? tr : null, row: free ? tr : null };
+  }
+  function moveMDrag(x, y) {
+    const d = mdrag;
+    d.ghost.style.left = x + "px";
+    d.ghost.style.top = y + "px";
+    const tg = (d.target = mediaDropTarget(x, y));
+    rows.querySelectorAll(".vrow.drop").forEach((r) => r.classList.remove("drop"));
+    if (!tg || tg.kind === "canvas") { hint.style.display = "none"; showSnap(null); return; }
+    const rowEl = tg.row && rows.querySelector(`.vrow[data-track="${tg.row}"]`);
+    const start = tg.kind === "main" ? tg.at : tg.t;
+    hint.style.display = "block";
+    hint.style.left = tx(start) + "px";
+    hint.style.width = Math.max(8, tg.dur * pps) + "px";
+    if (rowEl) { rowEl.classList.add("drop"); hint.style.top = rowEl.offsetTop + 4 + "px"; hint.style.height = rowEl.offsetHeight - 8 + "px"; }
+    else { hint.style.top = rows.offsetHeight + 4 + "px"; hint.style.height = (tg.kind === "audio" ? ROW_H.audio : ROW_H.overlay) - 8 + "px"; } // trek baru
+    showSnap(start);
+    const r = tl.getBoundingClientRect();
+    if (x > r.right - 40) tl.scrollLeft += 12;
+    else if (x < r.left + 40) tl.scrollLeft -= 12;
+  }
+  function dropMedia(tg) {
+    const m = mdrag.m;
+    if (tg.kind === "canvas") return addMediaToTimeline(m.id, "overlay");
+    let c;
+    if (tg.kind === "main") {
+      c = newClip(m.kind, m.id, "main", tg.at - 0.0001, tg.dur);
+    } else {
+      c = tg.kind === "audio" ? newClip("audio", m.id, null, tg.t, tg.dur) : newClip(m.kind, m.id, null, tg.t, tg.dur, { fit: "contain", scale: 0.55 });
+      c.track = tg.track || ensureTrack(tg.kind, c.start, c.dur);
+    }
+    P.clips.push(c);
+    normalize();
+    selId = c.id;
+    commit();
+    setT(c.start);
+    showToast(tg.kind === "main" ? "Klip disisipkan di trek utama" : tg.kind === "audio" ? "Audio ditaruh di timeline" : "Ditaruh sebagai overlay");
+  }
+  window.addEventListener("pointermove", (e) => {
+    if (!mdrag) return;
+    mdrag.x = e.clientX; mdrag.y = e.clientY;
+    const dist = Math.hypot(e.clientX - mdrag.x0, e.clientY - mdrag.y0);
+    if (!mdrag.active) {
+      if (mdrag.touch) { if (dist > 10) { clearTimeout(mdrag.lp); mdrag = null; } } // sedang menggulir
+      else if (dist > 6) startMDrag();
+      return;
+    }
+    moveMDrag(e.clientX, e.clientY);
+  });
+  // saat menyeret dengan jari, cegah halaman/panel ikut menggulir
+  document.addEventListener("touchmove", (e) => { if (mdrag && mdrag.active) e.preventDefault(); }, { passive: false });
+  const endMDrag = (e) => {
+    if (!mdrag) return;
+    clearTimeout(mdrag.lp);
+    const d = mdrag;
+    mdrag = null;
+    if (!d.active) return;
+    lastMDrag = Date.now();
+    d.ghost.remove();
+    document.body.classList.remove("mdrag");
+    hint.style.display = "none";
+    showSnap(null);
+    rows.querySelectorAll(".vrow.drop").forEach((r) => r.classList.remove("drop"));
+    if (e.type === "pointerup" && d.target) { mdrag = d; try { dropMedia(d.target); } finally { mdrag = null; } }
+  };
+  window.addEventListener("pointerup", endMDrag);
+  window.addEventListener("pointercancel", endMDrag);
+  $("vMediaGrid").addEventListener("contextmenu", (e) => { if (e.target.closest("[data-media]")) e.preventDefault(); });
+
   $("vMediaGrid").addEventListener("click", (e) => {
+    if (Date.now() - lastMDrag < 400) return;
     const b = e.target.closest("button");
     const card = e.target.closest("[data-media]");
     if (!card) return;
@@ -2383,6 +2610,7 @@
     const c = clipById(selId);
     const box = $("vInspector");
     const keepScroll = box.scrollTop;
+    box.classList.remove("tabbed");
     if (!c) {
       $("vInspTitle").textContent = "Proyek";
       $("vInspSub").textContent = `${P.aspect} · ${P.w}×${P.h} · ${fmtT(projectDur())}`;
@@ -2519,8 +2747,36 @@
       h += sec("Durasi", slider("dur", "Durasi", 0.2, 60, 0.1, "sec", c), openSecs.has("dur"), "dur");
     }
     box.innerHTML = h;
+    tabify(box, c);
     box.scrollTop = keepScroll;
   }
+  let inspTab = "";
+  function tabify(box, c) {
+    const base = c.type === "text" ? "Posisi" : c.type === "image" ? "Foto" : "Video";
+    const MAP = { teks: "Teks", garis: "Teks", latar: "Teks", karaoke: "Teks", dasar: base, chroma: base, audio: "Audio", speed: "Kecepatan", anim: "Animasi", trans: "Animasi", adj: "Warna", look: "Warna", dur: "Durasi" };
+    const secs = [...box.querySelectorAll("details.vsec[data-sec]")];
+    const groups = [];
+    secs.forEach((d) => { const g = MAP[d.dataset.sec] || "Lainnya"; d.dataset.tab = g; if (!groups.includes(g)) groups.push(g); });
+    if (groups.length < 2) return;
+    const cur = groups.includes(inspTab) ? inspTab : groups[0];
+    const bar = document.createElement("div");
+    bar.className = "vitabs";
+    bar.setAttribute("role", "tablist");
+    bar.innerHTML = groups.map((g) => `<button type="button" role="tab" class="vitab${g === cur ? " active" : ""}" data-itab="${g}" aria-selected="${g === cur}">${g}</button>`).join("");
+    box.insertBefore(bar, secs[0]);
+    box.classList.add("tabbed");
+    secs.forEach((d) => { d.open = true; d.hidden = d.dataset.tab !== cur; });
+  }
+  $("vInspector").addEventListener("click", (e) => {
+    if (e.target.closest(".tabbed summary")) { e.preventDefault(); return; }
+    const b = e.target.closest("[data-itab]");
+    if (!b) return;
+    inspTab = b.dataset.itab;
+    const box = $("vInspector");
+    box.querySelectorAll("[data-itab]").forEach((x) => { const on = x === b; x.classList.toggle("active", on); x.setAttribute("aria-selected", on); });
+    box.querySelectorAll("details.vsec[data-tab]").forEach((d) => { d.hidden = d.dataset.tab !== inspTab; });
+    box.scrollTop = 0;
+  });
   // nilai slider ikut berubah saat objek digeser di pratinjau
   function syncInspectorValues() {
     const c = clipById(selId);
@@ -2652,6 +2908,18 @@
   $("vStepFwd").addEventListener("click", () => frameStep(1));
   $("vSplit").addEventListener("click", doSplit);
   $("vDelete").addEventListener("click", doDelete);
+  $("vDelLeft").addEventListener("click", () => doTrimSide("left"));
+  $("vDelRight").addEventListener("click", () => doTrimSide("right"));
+  $("vTlRecord").addEventListener("click", toggleRecord);
+  $("vZoomOut").addEventListener("click", () => setZoom(clamp(+$("vZoom").value - 12, 0, 100)));
+  $("vZoomIn").addEventListener("click", () => setZoom(clamp(+$("vZoom").value + 12, 0, 100)));
+  $("vZoomFit").addEventListener("click", () => {
+    const D = projectDur();
+    if (!D) return;
+    const want = (tl.clientWidth - PAD * 2 - 30) / D;
+    setZoom(clamp((Math.log2(want / 6) / 7) * 100, 0, 100), D / 2);
+    tl.scrollLeft = 0;
+  });
   $("vDup").addEventListener("click", doDuplicate);
   $("vFreeze").addEventListener("click", doFreeze);
   $("vUndo").addEventListener("click", undo);
@@ -2684,6 +2952,8 @@
     else if (mod && (k === "y" || (k === "z" && e.shiftKey))) { e.preventDefault(); redo(); }
     else if (mod && k === "d") { e.preventDefault(); doDuplicate(); }
     else if (!mod && k === "s") { e.preventDefault(); doSplit(); }
+    else if (!mod && k === "q") { e.preventDefault(); doTrimSide("left"); }
+    else if (!mod && k === "w") { e.preventDefault(); doTrimSide("right"); }
     else if (k === "delete" || k === "backspace") { e.preventDefault(); doDelete(); }
     else if (k === "arrowleft") { e.preventDefault(); frameStep(-1, e.shiftKey); }
     else if (k === "arrowright") { e.preventDefault(); frameStep(1, e.shiftKey); }
